@@ -7,7 +7,7 @@
 | Stage | Result |
 |-------|--------|
 | Catalog | 110100 open markets (polymarket 10100, kalshi 100000) |
-| FMCC relevance | 9 watch · 8 review · 320 excluded |
+| FMCC relevance | 9 watch · 8 review · 325 excluded |
 | Activity | 9 markets, 30-day window |
 | Anomaly leads | **2 high** · 1 medium events |
 
