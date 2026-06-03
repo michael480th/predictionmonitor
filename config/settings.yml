@@ -24,5 +24,12 @@ platforms:
     enabled: true
     base_url: "https://api.elections.kalshi.com/trade-api/v2"
 
+relevance:
+  # A market's score = sum over taxonomy buckets of
+  #   bucket.weight * (distinct keywords matched).
+  # Tune these as false-positive/negative rates become clear (Phase 6).
+  watch_threshold: 2.0
+  review_threshold: 1.0
+
 output:
   dir: "reports"

@@ -12,8 +12,9 @@ venv/
 # Secrets / local config
 .env
 
-# Generated catalog/report data (keep the dir, ignore large dumps)
+# Generated catalog/report data (keep the dir, ignore generated dumps)
 reports/*.json
+reports/*.md
 !reports/.gitkeep
 
 # Local DB (later phases)

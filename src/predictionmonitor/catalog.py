@@ -107,3 +107,18 @@ def write_catalog(result: dict[str, Any], output_dir: str = "reports") -> str:
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(result, fh, indent=2, ensure_ascii=False)
     return path
+
+
+def latest_catalog_path(output_dir: str = "reports") -> Optional[str]:
+    """Return the newest reports/catalog-*.json by filename, or None."""
+    import glob
+
+    matches = sorted(glob.glob(os.path.join(output_dir, "catalog-*.json")))
+    return matches[-1] if matches else None
+
+
+def load_catalog_markets(path: str) -> list[Market]:
+    """Load a saved catalog JSON back into Market objects."""
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    return [Market.from_dict(m) for m in data.get("markets", [])]

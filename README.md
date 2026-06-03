@@ -21,7 +21,7 @@ for Compliance to investigate**.
 |------|-------|-------|
 | 0 | Project scaffold, config, FMCC taxonomy, normalized schema | ✅ done |
 | 1 | Catalog ingestion: Polymarket + Kalshi → normalized markets | ✅ done |
-| 2 | Relevance filtering (taxonomy scoring) → watchlist | ⬜ planned |
+| 2 | Relevance filtering (taxonomy scoring) → watchlist | ✅ done |
 | 3 | Activity collection (price/volume/trade/wallet time series) | ⬜ planned |
 | 4 | Anomaly detection + lead scoring | ⬜ planned |
 | 5 | Daily report + GitHub Actions cron | ⬜ planned |
@@ -49,12 +49,27 @@ python -m predictionmonitor catalog
 # One platform, capped for a fast smoke test
 python -m predictionmonitor catalog --platform polymarket --max 200
 
+# Score the latest catalog against the FMCC taxonomy -> watchlist
+python -m predictionmonitor filter
+
 # Inspect output
 ls reports/
 ```
 
 `catalog` writes `reports/catalog-YYYY-MM-DD.json` (normalized markets) plus a
-short summary to stdout.
+short summary to stdout. `filter` scores the newest catalog (or `--catalog
+PATH`) against `config/taxonomy.yml` and writes:
+
+- `reports/watchlist-YYYY-MM-DD.json` — machine-readable watch/review/ignore
+  buckets with per-market scores and matched keywords
+- `reports/watchlist-YYYY-MM-DD.md` — a reviewer-friendly report
+
+Each market's score is `sum over taxonomy buckets of weight * (distinct
+keywords matched)`. A market is **watched** at score ≥ `watch_threshold`,
+flagged for **review** at ≥ `review_threshold`, **excluded** if it hits an
+exclusion keyword, else **ignored**. Thresholds live in `config/settings.yml`.
+Scoring is intentionally simple and explainable — every decision carries the
+keywords that produced it.
 
 > **Network note.** The two API hosts must be reachable. In a sandbox with a
 > restricted egress allowlist they may be blocked; the scanner runs fully in
@@ -77,8 +92,10 @@ src/predictionmonitor/
     base.py            Adapter interface
     polymarket.py      Polymarket Gamma API adapter
     kalshi.py          Kalshi Trade API v2 adapter
-  catalog.py           orchestrates ingestion across adapters
-  cli.py               `python -m predictionmonitor`
+  catalog.py           orchestrates ingestion; loads/saves catalog JSON
+  relevance.py         Phase 2: taxonomy scoring -> watch/review/ignore
+  watchlist.py         writes watchlist JSON + Markdown report
+  cli.py               `python -m predictionmonitor` (catalog | filter)
 config/
   taxonomy.yml         FMCC relevance taxonomy (used in Phase 2)
   settings.yml         runtime settings

@@ -63,6 +63,18 @@ class Market:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Market":
+        """Reconstruct a Market from its serialized form (e.g. catalog JSON)."""
+        fields = dict(data)
+        fields["outcomes"] = [
+            Outcome(name=o.get("name", ""), price=o.get("price"))
+            for o in (data.get("outcomes") or [])
+        ]
+        # Drop any unknown keys so older/newer files stay loadable.
+        allowed = set(cls.__dataclass_fields__)
+        return cls(**{k: v for k, v in fields.items() if k in allowed})
+
     @property
     def search_text(self) -> str:
         """Concatenated text used by Phase 2 relevance scoring."""
