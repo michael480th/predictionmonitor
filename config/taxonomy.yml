@@ -11,35 +11,14 @@
 version: 1
 
 buckets:
-  rates_and_fed:
-    label: "Rates & Fed"
-    weight: 1.0
-    description: >
-      Monetary policy and rate levels that directly move FMCC's business and
-      the value of agency MBS.
-    keywords:
-      - fed
-      - federal reserve
-      - fomc
-      - interest rate
-      - rate cut
-      - rate hike
-      - rate decision
-      - basis points
-      - mortgage rate
-      - 30-year mortgage
-      - treasury yield
-      - inflation
-      - cpi
-      - pce
-      - jerome powell
-      - powell
-
   housing_and_gse:
     label: "Housing & GSE reform"
     weight: 1.5   # most FMCC-specific category
     description: >
-      Housing market conditions and the policy/structure of the GSEs.
+      Housing market conditions, mortgage-rate levels, and the policy/structure
+      of the GSEs. (General Fed/monetary-policy markets are intentionally out of
+      scope — they are huge and mostly unrelated to Freddie Mac — but mortgage
+      rates, which directly drive FMCC's business, stay in.)
     keywords:
       - freddie mac
       - fannie mae
@@ -59,6 +38,8 @@ buckets:
       - mortgage backed
       - mbs
       - housing starts
+      - mortgage rate
+      - 30-year mortgage
 
   fmcc_corporate:
     label: "FMCC corporate events"
@@ -81,7 +62,6 @@ platform_category_hints:
     - economy
     - economics
     - financials
-    - fed
   kalshi:
     - economics
     - financials
