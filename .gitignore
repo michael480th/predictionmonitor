@@ -15,7 +15,10 @@ venv/
 # Generated catalog/report data (keep the dir, ignore generated dumps)
 reports/*.json
 reports/*.md
+reports/*.html
 !reports/.gitkeep
+# NB: history/events.jsonl is intentionally tracked — it's the timeline's
+# persistent, append-only store that accumulates across cron runs.
 
 # Local DB (later phases)
 *.sqlite

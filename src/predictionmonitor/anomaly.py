@@ -155,7 +155,9 @@ def _mk_signal(name: str, value: float, thresholds: dict, weights: dict) -> Sign
 
 
 def _price_signals(points: list[dict], thresholds: dict, weights: dict) -> list[Signal]:
-    prices = [p["price"] for p in points if p.get("price") is not None]
+    pairs = [(p.get("t"), p["price"]) for p in points if p.get("price") is not None]
+    prices = [v for _, v in pairs]
+    times = [t for t, _ in pairs]
     signals: list[Signal] = []
     if len(prices) < 3:
         return signals
@@ -175,7 +177,11 @@ def _price_signals(points: list[dict], thresholds: dict, weights: dict) -> list[
         z = (max_step / sd) if sd > 0 else float("inf")
         if max_step >= thresholds["price_jump_abs"] and z >= thresholds["price_jump_z"]:
             sig = _mk_signal("price_jump", round(max_step, 4), thresholds, weights)
-            sig.detail = {"sigma": round(z, 1) if z != float("inf") else None}
+            # The step lands on the second point of the pair; that's "when".
+            sig.detail = {
+                "sigma": round(z, 1) if z != float("inf") else None,
+                "at": times[peak_idx + 1],
+            }
             signals.append(sig)
 
     abs_move = abs(prices[-1] - prices[0])

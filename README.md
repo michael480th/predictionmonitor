@@ -145,25 +145,39 @@ investigate, never a finding**.
 ## Daily scan & automation (Phase 5)
 
 `daily` runs the whole pipeline in one process — catalog → filter → activity →
-leads — and writes a top-level digest, `reports/report-YYYY-MM-DD.md`, that
-summarizes the run and lists the top event-leads with links to the per-stage
-reports:
+leads — and writes, for each run:
+
+- `reports/report-YYYY-MM-DD.md` — a top-level Markdown digest
+- `reports/report-YYYY-MM-DD.html` — a **visual** report (self-contained, no
+  dependencies): summary cards, a *"when the jumps happened"* timeline of the
+  window's detected jumps, and a price **sparkline** for every flagged market
+  with the jump dotted in red
+- `reports/timeline.html` — a **cross-day timeline** (events-per-day bars + the
+  most-recurring events) built from `history/events.jsonl`, an append-only,
+  *tracked* log that accumulates one record per flagged event each run
 
 ```bash
 python -m predictionmonitor daily               # all enabled platforms
 python -m predictionmonitor daily --platform polymarket --max 3000 --window-days 30
 python -m predictionmonitor daily --include-review   # also borderline markets
+
+# Re-render just the cross-day timeline from accumulated history
+python -m predictionmonitor timeline
 ```
+
+The charts are pure inline SVG generated in `viz.py` — no matplotlib/JS — so the
+HTML opens in any browser and renders as a CI artifact.
 
 `.github/workflows/daily.yml` runs `daily` on a **12:00 UTC cron** (and on
 demand via *Run workflow*, with window/cap/include-review inputs). GitHub-hosted
 runners have open network, so the Polymarket trades/wallet endpoints and Kalshi
 activity — which a restricted dev sandbox may block — are reachable there. Each
 run publishes the digest to the **job summary** and uploads every report
-(`.md` + `.json`) as a 90-day **artifact**. Reports stay gitignored, so the cron
-never commits to the repo. Kalshi reads are public; set the optional
-`KALSHI_API_KEY_ID` / `KALSHI_API_PRIVATE_KEY` repo secrets only if you hit rate
-or auth limits.
+(`.html` + `.md` + `.json`) as a 90-day **artifact**. The bulky reports stay
+gitignored; only the small `history/events.jsonl` is committed back (on the
+default branch, `[skip ci]`) so the cross-day timeline accumulates. Kalshi reads
+are public; set the optional `KALSHI_API_KEY_ID` / `KALSHI_API_PRIVATE_KEY` repo
+secrets only if you hit rate or auth limits.
 
 ## Tests
 
@@ -187,7 +201,10 @@ src/predictionmonitor/
   activity.py          Phase 3: collect activity for watched markets -> report
   anomaly.py           Phase 4: anomaly signals + lead scoring -> leads report
   pipeline.py          Phase 5: daily orchestration + digest report
-  cli.py               `python -m predictionmonitor` (catalog|filter|activity|leads|daily)
+  report_html.py       visual HTML report (summary, timeline, sparklines)
+  history.py           append-only event history + cross-day timeline
+  viz.py               dependency-free SVG charts (sparkline, timeline, bars)
+  cli.py               `python -m predictionmonitor` (catalog|filter|activity|leads|daily|timeline)
 config/
   taxonomy.yml         FMCC relevance taxonomy (used in Phase 2)
   settings.yml         runtime settings

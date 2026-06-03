@@ -34,6 +34,8 @@ from predictionmonitor.anomaly import (
     write_leads,
 )
 from predictionmonitor.pipeline import run_daily
+from predictionmonitor.report_html import write_html_report
+from predictionmonitor.history import load_history, write_timeline
 
 
 def _enabled_platforms(settings: dict) -> list[str]:
@@ -174,6 +176,7 @@ def _cmd_leads(args: argparse.Namespace) -> int:
     print(f"Scoring activity from {activity_path}", file=sys.stderr)
     result = run_leads(activity_result, settings)
     json_path, md_path = write_leads(result, output_dir=output_dir)
+    html_path = write_html_report(result, activity_result, output_dir=output_dir)
 
     ec = result["event_counts"]
     mc = result["counts"]
@@ -181,7 +184,22 @@ def _cmd_leads(args: argparse.Namespace) -> int:
         f"\nEvents — High: {ec['high']}  Medium: {ec['medium']}  Low/none: {ec['low']}"
         f"  (markets flagged: {mc['high']} high, {mc['medium']} medium)"
     )
-    print(f"Wrote {json_path}\n      {md_path}")
+    print(f"Wrote {json_path}\n      {md_path}\n      {html_path}")
+    return 0
+
+
+def _cmd_timeline(args: argparse.Namespace) -> int:
+    settings = load_settings(args.settings)
+    output_dir = settings.get("output", {}).get("dir", "reports")
+    history = load_history(args.history)
+    if not history:
+        print(
+            f"No history at {args.history} yet. Run `daily` to accumulate events.",
+            file=sys.stderr,
+        )
+    path = write_timeline(history, output_dir=output_dir)
+    days = {r["date"] for r in history}
+    print(f"Timeline of {len(history)} events across {len(days)} day(s): {path}")
     return 0
 
 
@@ -341,6 +359,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--settings", default="config/settings.yml", help="path to settings.yml"
     )
     daily.set_defaults(func=_cmd_daily)
+
+    tl = sub.add_parser(
+        "timeline",
+        help="render the cross-day events-over-time timeline from history",
+    )
+    tl.add_argument(
+        "--history",
+        default="history/events.jsonl",
+        help="path to the append-only event history",
+    )
+    tl.add_argument(
+        "--settings", default="config/settings.yml", help="path to settings.yml"
+    )
+    tl.set_defaults(func=_cmd_timeline)
     return parser
 
 

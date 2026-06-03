@@ -63,6 +63,14 @@ class SignalTests(unittest.TestCase):
         names = {s.name for s in r.signals}
         self.assertIn("price_jump", names)
 
+    def test_price_jump_records_timestamp(self):
+        # The jump is between t4 and t5, so "at" is the timestamp of t5.
+        a = activity(prices=[0.50, 0.505, 0.50, 0.505, 0.50, 0.85])
+        r = score(a)
+        jump = next(s for s in r.signals if s.name == "price_jump")
+        self.assertEqual(jump.detail["at"], "t5")
+        self.assertIsNotNone(jump.detail["sigma"])
+
     def test_abs_move_fires(self):
         a = activity(prices=[0.20, 0.25, 0.32, 0.41, 0.50, 0.60])  # +0.40 net
         r = score(a)

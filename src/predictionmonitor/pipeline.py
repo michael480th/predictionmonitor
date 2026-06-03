@@ -16,6 +16,8 @@ from typing import Any, Optional
 from predictionmonitor.activity import run_activity, write_activity
 from predictionmonitor.anomaly import run_leads, write_leads
 from predictionmonitor.catalog import run_catalog, write_catalog
+from predictionmonitor.history import append_run, load_history, write_timeline
+from predictionmonitor.report_html import write_html_report
 from predictionmonitor.relevance import (
     description_weight,
     filter_markets,
@@ -43,6 +45,7 @@ def run_daily(
     include_review: bool = False,
     taxonomy_path: str = "config/taxonomy.yml",
     output_dir: str = "reports",
+    history_path: str = "history/events.jsonl",
 ) -> dict[str, Any]:
     """Run catalog -> filter -> activity -> leads, writing all artifacts.
 
@@ -81,9 +84,10 @@ def run_daily(
     # 4. Anomaly detection -> leads.
     leads_result = run_leads(activity_result, settings)
     leads_json, leads_md = write_leads(leads_result, output_dir=output_dir)
+    today = leads_result.get("generated_at") or date.today().isoformat()
 
     summary = {
-        "generated_at": date.today().isoformat(),
+        "generated_at": today,
         "platforms": plats,
         "catalog": {
             "total": catalog_result.get("total", 0),
@@ -110,8 +114,18 @@ def run_daily(
             "leads_json": leads_json,
         },
     }
+
+    # 5. Outputs: markdown digest, visual HTML report, cross-day timeline.
     digest_path = write_digest(summary, output_dir=output_dir)
-    summary["artifacts"]["digest"] = digest_path
+    html_path = write_html_report(
+        leads_result, activity_result, summary=summary, output_dir=output_dir
+    )
+    append_run(leads_result, run_date=today, path=history_path)
+    timeline_path = write_timeline(load_history(history_path), output_dir=output_dir)
+
+    summary["artifacts"].update(
+        {"digest": digest_path, "report_html": html_path, "timeline_html": timeline_path}
+    )
     return summary
 
 
@@ -194,6 +208,8 @@ def render_digest(summary: dict[str, Any]) -> str:
         "",
         "## Full reports",
         "",
+        f"- 📊 Visual report (charts): `report-{today}.html`",
+        "- 📈 Timeline (events over time): `timeline.html`",
         f"- Watchlist: `{_basename(arts['watchlist_md'])}`",
         f"- Activity: `{_basename(arts['activity_json'])}`",
         f"- Leads: `{_basename(arts['leads_md'])}`",
