@@ -44,6 +44,19 @@ _MAX_OFFSET = 10_000
 _DEFAULT_CLOB_URL = "https://clob.polymarket.com"
 _DEFAULT_DATA_URL = "https://data-api.polymarket.com"
 
+# The data-api sits behind Cloudflare, which 403s the default library
+# User-Agent from cloud IPs. A browser-like UA gets the public trades feed
+# through. (Gamma/CLOB don't need this, but it's harmless to send.)
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+    "Origin": "https://polymarket.com",
+    "Referer": "https://polymarket.com/",
+}
+
 
 class PolymarketAdapter(Adapter):
     name = "polymarket"
@@ -244,8 +257,9 @@ class PolymarketAdapter(Adapter):
     ) -> list[Trade]:
         """Recent trades for the market via the Data API, newest first.
 
-        Each trade carries an on-chain proxy wallet, which we immediately reduce
-        to an opaque cluster key (raw addresses never leave this method).
+        Each trade keeps both an opaque cluster key (for pattern detection) and
+        its raw on-chain wallet + settlement tx hash, so a flagged outlier can be
+        opened on Polygonscan / the trader's Polymarket profile and investigated.
         """
         condition_id = market.platform_meta.get("condition_id")
         if not condition_id:
@@ -262,6 +276,7 @@ class PolymarketAdapter(Adapter):
                 f"{data_url}/trades",
                 params={"market": condition_id, "limit": page, "offset": offset},
                 timeout=self.timeout,
+                headers=_BROWSER_HEADERS,
             )
             rows = rows if isinstance(rows, list) else (rows.get("data") or [])
             if not rows:
@@ -273,6 +288,7 @@ class PolymarketAdapter(Adapter):
                     stop = True
                     break
                 wallet = r.get("proxyWallet") or r.get("maker") or r.get("wallet")
+                tx_hash = r.get("transactionHash") or r.get("transaction_hash")
                 out.append(
                     Trade(
                         t=iso_from_unix(r.get("timestamp")) or "",
@@ -280,6 +296,8 @@ class PolymarketAdapter(Adapter):
                         size=parse_float(r.get("size")),
                         side=(r.get("side") or "").lower() or None,
                         wallet=cluster_key(wallet) if wallet else None,
+                        wallet_address=str(wallet) if wallet else None,
+                        tx_hash=str(tx_hash) if tx_hash else None,
                     )
                 )
                 if len(out) >= max_trades:

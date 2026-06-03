@@ -65,13 +65,13 @@ class PolymarketActivityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.adapter.fetch_price_history(bare)
 
-    def test_trades_hash_wallet_and_respect_window(self):
+    def test_trades_capture_wallet_tx_and_respect_window(self):
         now = time.time()
         rows = [
-            {"proxyWallet": "0xWALLET", "side": "BUY", "size": 10, "price": 0.5,
-             "timestamp": now - 100},
-            {"proxyWallet": "0xWALLET", "side": "SELL", "size": 4, "price": 0.5,
-             "timestamp": now - 200},
+            {"proxyWallet": "0xWALLET", "transactionHash": "0xTX1", "side": "BUY",
+             "size": 10, "price": 0.5, "timestamp": now - 100},
+            {"proxyWallet": "0xWALLET", "transactionHash": "0xTX2", "side": "SELL",
+             "size": 4, "price": 0.5, "timestamp": now - 200},
             # older than the window -> collection should stop here
             {"proxyWallet": "0xOTHER", "side": "BUY", "size": 99, "price": 0.5,
              "timestamp": now - 999999},
@@ -79,9 +79,16 @@ class PolymarketActivityTests(unittest.TestCase):
         with mock.patch.object(polymarket, "get_json", return_value=rows):
             trades = self.adapter.fetch_trades(self.market, window_days=1)
         self.assertEqual(len(trades), 2)  # third is outside the window
-        # Raw address is never stored; wallet is the opaque cluster key.
+        # Opaque cluster key is still kept for pattern detection...
         self.assertEqual(trades[0].wallet, cluster_key("0xWALLET"))
-        self.assertNotIn("0xWALLET", str([t.to_dict() for t in trades]))
+        # ...and the raw wallet + tx are now captured so the outlier can be
+        # opened and investigated directly.
+        self.assertEqual(trades[0].wallet_address, "0xWALLET")
+        self.assertEqual(trades[0].tx_hash, "0xTX1")
+        self.assertEqual(trades[0].tx_url, "https://polygonscan.com/tx/0xTX1")
+        self.assertEqual(
+            trades[0].account_url, "https://polymarket.com/profile/0xWALLET"
+        )
         self.assertEqual(trades[0].side, "buy")
 
     def test_trades_max_cap(self):

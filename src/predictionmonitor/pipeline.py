@@ -150,6 +150,40 @@ def _signal_text(signals: list[dict[str, Any]]) -> str:
     return "; ".join(parts) or "—"
 
 
+def _num(x: Any) -> str:
+    """Compact number formatting for trade sizes/prices (no sci notation)."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return "?"
+    if abs(v) >= 1000:
+        return f"{v:,.0f}"
+    if v == int(v):
+        return str(int(v))
+    return f"{v:.4g}"
+
+
+def _flagged_trades_lines(trades: list[dict[str, Any]]) -> list[str]:
+    """Indented bullets for the outlier trades, linking to the actual tx/wallet."""
+    if not trades:
+        return []
+    out = ["  - **Outlier trades** (largest in window — open to investigate):"]
+    for tr in trades[:5]:
+        side = (tr.get("side") or "").upper()
+        desc = f"{_num(tr.get('size'))} @ {_num(tr.get('price'))}"
+        if side:
+            desc += f" {side}"
+        links = []
+        if tr.get("tx_url"):
+            links.append(f"[tx]({tr['tx_url']})")
+        if tr.get("account_url"):
+            links.append(f"[wallet]({tr['account_url']})")
+        suffix = f" — {' · '.join(links)}" if links else ""
+        when = (tr.get("t") or "")[:16].replace("T", " ")
+        out.append(f"    - {desc}{suffix}  `{when}`")
+    return out
+
+
 def render_digest(summary: dict[str, Any]) -> str:
     """Render the top-level daily digest as Markdown."""
     today = summary["generated_at"]
@@ -207,6 +241,7 @@ def render_digest(summary: dict[str, Any]) -> str:
                 f"[{title}]({e['url']}){sib}  \n"
                 f"  {e['headline_market']} — {_signal_text(e['top_signals'])}"
             )
+            lines += _flagged_trades_lines(e.get("flagged_trades", []))
     lines += [
         "",
         "## Full reports",

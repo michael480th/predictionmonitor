@@ -134,6 +134,7 @@ def _compute_stats(
 
     if trades:
         stats["trade_volume"] = round(sum((t.size or 0.0) for t in trades), 4)
+        stats["suspicious_trades"] = _suspicious_trades(trades)
 
     if clusters:
         total = sum(c.volume for c in clusters)
@@ -142,6 +143,17 @@ def _compute_stats(
         )
 
     return stats
+
+
+def _suspicious_trades(trades: list[Trade], limit: int = 5) -> list[dict[str, Any]]:
+    """The biggest trades in the window — the outliers worth opening directly.
+
+    Returned newest-investigation-first as serialized dicts carrying the raw
+    wallet + tx links (where the platform exposes them), so the report can link
+    straight to the on-chain transaction instead of the market's generic page.
+    """
+    ranked = sorted(trades, key=lambda t: (t.size or 0.0), reverse=True)[:limit]
+    return [t.to_dict() for t in ranked if (t.size or 0.0) > 0]
 
 
 def collect_market_activity(
@@ -173,7 +185,13 @@ def collect_market_activity(
             market, window_days=window_days, max_trades=max_trades
         )
     except Exception as exc:
-        log.warning("trades failed for %s: %s", market.market_id, exc)
+        # Surface the response body on HTTP errors — it distinguishes a fixable
+        # Cloudflare/UA block from a hard geo/IP block on the trades feed.
+        body = ""
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            body = f" | body: {resp.text[:200]!r}"
+        log.warning("trades failed for %s: %s%s", market.market_id, exc, body)
         errors.append(f"trades: {type(exc).__name__}: {exc}")
 
     clusters = _wallet_clusters(trades)
