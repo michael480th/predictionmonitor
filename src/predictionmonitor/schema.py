@@ -166,12 +166,14 @@ class Trade:
     """
 
     t: str                              # ISO 8601 UTC timestamp
-    price: Optional[float]              # implied probability in [0, 1]
+    price: Optional[float]              # implied probability / per-share price in [0, 1]
     size: Optional[float]              # contracts/shares traded
     side: Optional[str] = None         # normalized: "buy"|"sell"|"yes"|"no"
+    outcome: Optional[str] = None      # which side of the bet, e.g. "Yes"/"No"
     wallet: Optional[str] = None       # opaque cluster key, or None if anonymous
     wallet_address: Optional[str] = None  # raw on-chain address, for investigation
     tx_hash: Optional[str] = None      # settlement transaction hash, for investigation
+    pseudonym: Optional[str] = None    # platform's public handle for the wallet, if any
 
     @property
     def tx_url(self) -> Optional[str]:
@@ -185,8 +187,49 @@ class Trade:
             return None
         return f"https://polymarket.com/profile/{self.wallet_address}"
 
+    @property
+    def usd(self) -> Optional[float]:
+        """Best-effort notional value of the trade in USD (shares × price)."""
+        if self.size is None or self.price is None:
+            return None
+        return round(self.size * self.price, 2)
+
+    @property
+    def actor_label(self) -> str:
+        """A human-readable name for the wallet: its handle, else a short address."""
+        if self.pseudonym:
+            return self.pseudonym
+        addr = self.wallet_address
+        if addr:
+            return f"{addr[:6]}…{addr[-4:]}" if len(addr) > 12 else addr
+        return "anonymous wallet"
+
+    @property
+    def action(self) -> str:
+        """Plain-English verb for the trade direction."""
+        side = (self.side or "").lower()
+        if side in ("buy", "yes"):
+            return "bought"
+        if side in ("sell", "no"):
+            return "sold"
+        return "traded"
+
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["tx_url"] = self.tx_url
         d["account_url"] = self.account_url
+        d["usd"] = self.usd
+        d["actor_label"] = self.actor_label
+        d["action"] = self.action
         return d
+
+
+def format_usd(value: Any) -> Optional[str]:
+    """Format a USD amount compactly ($1,610 / $4.20), or None if not numeric."""
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    if amount >= 100:
+        return f"${amount:,.0f}"
+    return f"${amount:,.2f}"

@@ -14,6 +14,7 @@ from datetime import date
 from typing import Any, Optional
 
 from predictionmonitor import history as history_mod
+from predictionmonitor.schema import format_usd
 from predictionmonitor.viz import (
     TIER_COLORS,
     _parse_iso,
@@ -112,25 +113,33 @@ def _fmt_num(x: Any) -> str:
 
 
 def _flagged_trades_html(trades: list[dict[str, Any]]) -> str:
-    """The outlier trades for an event, linking straight to the tx + wallet."""
+    """The biggest trades behind a lead, in plain English.
+
+    Reads like "Brave-Honey bought $1,610 of Yes". The wallet name links to that
+    wallet's Polymarket profile (its positions); the on-chain receipt is a small
+    secondary link.
+    """
     if not trades:
         return ""
     items = []
     for tr in trades[:5]:
-        side = escape((tr.get("side") or "").upper())
-        desc = f'{_fmt_num(tr.get("size"))} @ {_fmt_num(tr.get("price"))} {side}'.strip()
-        links = []
-        if tr.get("tx_url"):
-            links.append(f'<a class="tx" href="{escape(tr["tx_url"])}">tx</a>')
-        if tr.get("account_url"):
-            links.append(f'<a href="{escape(tr["account_url"])}">wallet</a>')
-        link_txt = " · ".join(links) or "—"
+        actor = escape(tr.get("actor_label") or "A wallet")
+        action = escape(tr.get("action") or "traded")
+        amount = escape(format_usd(tr.get("usd")) or f'{_fmt_num(tr.get("size"))} shares')
+        outcome = tr.get("outcome")
+        of = f" of {escape(outcome)}" if outcome else ""
+        profile = tr.get("account_url")
+        name = (f'<a class="tx" href="{escape(profile)}">{actor}</a>'
+                if profile else f'<span class="tx">{actor}</span>')
+        receipt = (f' · <a href="{escape(tr["tx_url"])}">receipt</a>'
+                   if tr.get("tx_url") else "")
         when = escape((tr.get("t") or "")[:16].replace("T", " "))
         items.append(
-            f'<li>{desc} — {link_txt} <span class="meta">{when}</span></li>'
+            f'<li>{name} {action} <b>{amount}</b>{of} '
+            f'<span class="meta">· {when}{receipt}</span></li>'
         )
-    return ('<div class="trades"><b>Outlier trades</b> '
-            "(largest in window — open to investigate):"
+    return ('<div class="trades"><b>Largest trades</b> '
+            "(click a name to see that wallet's positions):"
             f'<ul>{"".join(items)}</ul></div>')
 
 
