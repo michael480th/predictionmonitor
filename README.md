@@ -25,7 +25,7 @@ for Compliance to investigate**.
 | 3 | Activity collection (price/volume/trade/wallet time series) | ✅ done |
 | 4 | Anomaly detection + lead scoring | ✅ done |
 | 5 | Daily report + GitHub Actions cron | ✅ done |
-| 6 | Backtest / threshold tuning | ⬜ planned |
+| 6 | Backtest / threshold tuning | ✅ done |
 
 ## Data sources (Phase 1)
 
@@ -164,6 +164,10 @@ python -m predictionmonitor daily --include-review   # also borderline markets
 
 # Re-render just the cross-day timeline from accumulated history
 python -m predictionmonitor timeline
+
+# Calibrate thresholds against collected activity (Phase 6)
+python -m predictionmonitor backtest                       # pools all activity-*.json
+python -m predictionmonitor backtest --activity reports/activity-2026-06-03.json
 ```
 
 The charts are pure inline SVG generated in `viz.py` — no matplotlib/JS — so the
@@ -179,6 +183,25 @@ gitignored; only the small `history/events.jsonl` is committed back (on the
 default branch, `[skip ci]`) so the cross-day timeline accumulates. Kalshi reads
 are public; set the optional `KALSHI_API_KEY_ID` / `KALSHI_API_PRIVATE_KEY` repo
 secrets only if you hit rate or auth limits.
+
+## Calibration / backtest (Phase 6)
+
+There's no labelled "suspicious" ground truth for pseudonymous trades, so
+`backtest` is a **calibration harness**, not a precision/recall backtest. It
+pools the markets from one or more `activity-*.json` files and reports:
+
+- the **distribution** (min/p50/p90/p95/max) of each signal's raw value across
+  all markets — so you can see where the mass is;
+- **threshold sweeps** — how many markets would fire each signal at a range of
+  thresholds;
+- **data-driven suggestions** — thresholds at the p90 of observed values (flag
+  ≈ the top decile), with the projected high/medium/low tier mix if applied.
+
+It re-scores stored activity only (no re-fetching), so it's fast and offline.
+Pool more days for a stabler estimate, then edit `config/settings.yml →
+anomaly.thresholds`. Example from a single 76-market day: `price_jump_abs` p90
+≈ 0.22 vs. the default 0.10, i.e. the default is deliberately sensitive — the
+backtest is how you tighten it once you've seen real volume.
 
 ## Tests
 
@@ -205,7 +228,8 @@ src/predictionmonitor/
   report_html.py       visual HTML report (summary, timeline, sparklines)
   history.py           append-only event history + cross-day timeline
   viz.py               dependency-free SVG charts (sparkline, timeline, bars)
-  cli.py               `python -m predictionmonitor` (catalog|filter|activity|leads|daily|timeline)
+  backtest.py          Phase 6: threshold calibration (distributions, sweeps)
+  cli.py               CLI: catalog|filter|activity|leads|daily|timeline|backtest
 config/
   taxonomy.yml         FMCC relevance taxonomy (used in Phase 2)
   settings.yml         runtime settings

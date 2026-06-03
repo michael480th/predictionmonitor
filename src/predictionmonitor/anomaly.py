@@ -154,6 +154,27 @@ def _mk_signal(name: str, value: float, thresholds: dict, weights: dict) -> Sign
     )
 
 
+def jump_stats(prices: list[float]):
+    """(max |step|, σ of that step vs the others, index of the step) or None.
+
+    The biggest move is measured against the spread of the *other* steps so a
+    lone spike doesn't mask itself in its own volatility. Shared by detection
+    and the Phase 6 backtest so both use identical math. σ is ``inf`` when the
+    rest of the series is flat (sd == 0).
+    """
+    if len(prices) < 4:  # need >= 3 steps for a leave-one-out baseline
+        return None
+    steps = [b - a for a, b in zip(prices, prices[1:])]
+    peak_idx = max(range(len(steps)), key=lambda i: abs(steps[i]))
+    max_step = abs(steps[peak_idx])
+    if max_step == 0:  # perfectly flat series — no jump to speak of
+        return None
+    baseline = steps[:peak_idx] + steps[peak_idx + 1:]
+    sd = statistics.pstdev(baseline)
+    z = (max_step / sd) if sd > 0 else float("inf")
+    return max_step, z, peak_idx
+
+
 def _price_signals(points: list[dict], thresholds: dict, weights: dict) -> list[Signal]:
     pairs = [(p.get("t"), p["price"]) for p in points if p.get("price") is not None]
     prices = [v for _, v in pairs]
@@ -162,22 +183,16 @@ def _price_signals(points: list[dict], thresholds: dict, weights: dict) -> list[
     if len(prices) < 3:
         return signals
 
-    steps = [b - a for a, b in zip(prices, prices[1:])]
     # A jump must be BOTH materially large in absolute terms AND statistically
     # unusual. At fine resolution most steps are ~0, so a tiny tick can look
     # like many σ — the absolute floor keeps "frozen market ticks 0.01->0.03"
-    # from scoring. The σ test (measured against the *other* steps, so the jump
-    # doesn't mask itself) keeps a slow steady climb from scoring. The lead
+    # from scoring. The σ test keeps a slow steady climb from scoring. The lead
     # strength scales with the move size; σ rides along as explanatory detail.
-    if len(steps) >= 3:
-        peak_idx = max(range(len(steps)), key=lambda i: abs(steps[i]))
-        max_step = abs(steps[peak_idx])
-        baseline = steps[:peak_idx] + steps[peak_idx + 1:]
-        sd = statistics.pstdev(baseline)
-        z = (max_step / sd) if sd > 0 else float("inf")
+    js = jump_stats(prices)
+    if js is not None:
+        max_step, z, peak_idx = js
         if max_step >= thresholds["price_jump_abs"] and z >= thresholds["price_jump_z"]:
             sig = _mk_signal("price_jump", round(max_step, 4), thresholds, weights)
-            # The step lands on the second point of the pair; that's "when".
             sig.detail = {
                 "sigma": round(z, 1) if z != float("inf") else None,
                 "at": times[peak_idx + 1],

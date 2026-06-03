@@ -36,6 +36,12 @@ from predictionmonitor.anomaly import (
 from predictionmonitor.pipeline import run_daily
 from predictionmonitor.report_html import write_html_report
 from predictionmonitor.history import load_history, write_timeline
+from predictionmonitor.backtest import (
+    find_activity_files,
+    load_activities,
+    run_backtest,
+    write_backtest,
+)
 
 
 def _enabled_platforms(settings: dict) -> list[str]:
@@ -187,6 +193,42 @@ def _cmd_leads(args: argparse.Namespace) -> int:
         f"  (markets flagged: {mc['high']} high, {mc['medium']} medium)"
     )
     print(f"Wrote {json_path}\n      {md_path}\n      {html_path}")
+    return 0
+
+
+def _cmd_backtest(args: argparse.Namespace) -> int:
+    settings = load_settings(args.settings)
+    output_dir = settings.get("output", {}).get("dir", "reports")
+
+    paths = args.activity or find_activity_files(output_dir)
+    if not paths:
+        print(
+            "No activity files found. Run `activity` or `daily` first, "
+            "or pass --activity PATH [PATH ...].",
+            file=sys.stderr,
+        )
+        return 2
+
+    activities = load_activities(paths)
+    print(
+        f"Calibrating on {len(activities)} markets from {len(paths)} file(s)",
+        file=sys.stderr,
+    )
+    result = run_backtest(activities, settings, n_inputs=len(paths))
+    json_path, md_path = write_backtest(result, output_dir=output_dir)
+
+    cur = result["current"]["tiers"]
+    sug = result["suggested"]["thresholds"]
+    print(
+        f"\nCurrent tier mix: {cur['high']} high / {cur['medium']} medium / "
+        f"{cur['low']} low"
+    )
+    if sug:
+        st = result["suggested"]["tiers_if_applied"]
+        print(f"Suggested thresholds (p90): {sug}")
+        print(f"  -> would yield {st['high']} high / {st['medium']} medium / "
+              f"{st['low']} low")
+    print(f"Wrote {json_path}\n      {md_path}")
     return 0
 
 
@@ -375,6 +417,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--settings", default="config/settings.yml", help="path to settings.yml"
     )
     tl.set_defaults(func=_cmd_timeline)
+
+    bt = sub.add_parser(
+        "backtest",
+        help="calibrate anomaly thresholds against collected activity",
+    )
+    bt.add_argument(
+        "--activity",
+        nargs="+",
+        help="activity JSON file(s) to pool (default: all activity-*.json)",
+    )
+    bt.add_argument(
+        "--settings", default="config/settings.yml", help="path to settings.yml"
+    )
+    bt.set_defaults(func=_cmd_backtest)
     return parser
 
 
