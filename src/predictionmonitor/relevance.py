@@ -31,6 +31,11 @@ _DEFAULT_TAXONOMY_PATH = os.path.join("config", "taxonomy.yml")
 DEFAULT_WATCH_THRESHOLD = 2.0
 DEFAULT_REVIEW_THRESHOLD = 1.0
 
+# How much a keyword that appears ONLY in a market's description/tags counts
+# relative to one in the title/event. Boilerplate descriptions often mention
+# "Federal Reserve" etc. in passing, so weighting them down sharpens precision.
+DEFAULT_DESCRIPTION_WEIGHT = 0.5
+
 
 def load_taxonomy(path: str = _DEFAULT_TAXONOMY_PATH) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8") as fh:
@@ -55,11 +60,17 @@ class BucketMatch:
     bucket: str
     label: str
     weight: float
-    matched_keywords: list[str]
+    matched_keywords: list[str]                     # union (title + description-only)
+    strong_keywords: list[str] = field(default_factory=list)  # in title/event
+    weak_keywords: list[str] = field(default_factory=list)    # description/tags only
+    description_weight: float = DEFAULT_DESCRIPTION_WEIGHT
 
     @property
     def contribution(self) -> float:
-        return round(self.weight * len(self.matched_keywords), 4)
+        effective = len(self.strong_keywords) + self.description_weight * len(
+            self.weak_keywords
+        )
+        return round(self.weight * effective, 4)
 
 
 @dataclass
@@ -94,22 +105,37 @@ class RelevanceResult:
         return "; ".join(parts)
 
 
-def score_market(market: Market, taxonomy: dict[str, Any]) -> RelevanceResult:
-    text = market.search_text
+def score_market(
+    market: Market,
+    taxonomy: dict[str, Any],
+    *,
+    description_weight: float = DEFAULT_DESCRIPTION_WEIGHT,
+) -> RelevanceResult:
+    strong_text = market.strong_text
+    weak_text = market.weak_text
     exclude_kw = [k.lower() for k in taxonomy.get("exclude_keywords", [])]
-    excluded_by = _matched_keywords(text, exclude_kw)
+    excluded_by = _matched_keywords(market.search_text, exclude_kw)
 
     matches: list[BucketMatch] = []
     score = 0.0
     for key, bucket in taxonomy.get("buckets", {}).items():
         weight = float(bucket.get("weight", 1.0))
-        hits = _matched_keywords(text, bucket.get("keywords", []))
-        if hits:
+        keywords = bucket.get("keywords", [])
+        strong_hits = _matched_keywords(strong_text, keywords)
+        weak_only = [
+            kw
+            for kw in _matched_keywords(weak_text, keywords)
+            if kw not in strong_hits
+        ]
+        if strong_hits or weak_only:
             bm = BucketMatch(
                 bucket=key,
                 label=bucket.get("label", key),
                 weight=weight,
-                matched_keywords=hits,
+                matched_keywords=strong_hits + weak_only,
+                strong_keywords=strong_hits,
+                weak_keywords=weak_only,
+                description_weight=description_weight,
             )
             matches.append(bm)
             score += bm.contribution
@@ -148,6 +174,7 @@ def filter_markets(
     *,
     watch_threshold: float = DEFAULT_WATCH_THRESHOLD,
     review_threshold: float = DEFAULT_REVIEW_THRESHOLD,
+    description_weight: float = DEFAULT_DESCRIPTION_WEIGHT,
 ) -> dict[str, Any]:
     """Score a set of markets and bucket them into watch/review/ignore/excluded.
 
@@ -159,7 +186,7 @@ def filter_markets(
     excluded = 0
 
     for market in markets:
-        result = score_market(market, taxonomy)
+        result = score_market(market, taxonomy, description_weight=description_weight)
         result.decision = decide(
             result,
             watch_threshold=watch_threshold,
@@ -199,3 +226,8 @@ def relevance_thresholds(settings: dict[str, Any]) -> tuple[float, float]:
         float(rel.get("watch_threshold", DEFAULT_WATCH_THRESHOLD)),
         float(rel.get("review_threshold", DEFAULT_REVIEW_THRESHOLD)),
     )
+
+
+def description_weight(settings: dict[str, Any]) -> float:
+    rel = (settings or {}).get("relevance", {})
+    return float(rel.get("description_weight", DEFAULT_DESCRIPTION_WEIGHT))

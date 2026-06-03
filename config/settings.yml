@@ -20,6 +20,9 @@ platforms:
   polymarket:
     enabled: true
     base_url: "https://gamma-api.polymarket.com"
+    # Phase 3 activity hosts (price history + trades live off the Gamma API).
+    clob_base_url: "https://clob.polymarket.com"
+    data_base_url: "https://data-api.polymarket.com"
   kalshi:
     enabled: true
     base_url: "https://api.elections.kalshi.com/trade-api/v2"
@@ -30,6 +33,39 @@ relevance:
   # Tune these as false-positive/negative rates become clear (Phase 6).
   watch_threshold: 2.0
   review_threshold: 1.0
+  # Keywords found only in a market's description/tags (not its title/event)
+  # count this much vs. a title hit — sharpens precision against boilerplate.
+  description_weight: 0.5
+
+activity:
+  # Phase 3: how much recent activity to pull for each watchlisted market.
+  window_days: 14
+  # Price-history resolution in minutes (snapped to each API's allowed steps).
+  fidelity_minutes: 60
+  # Cap on trades scanned/stored per market (newest first).
+  max_trades: 2000
+  # Store individual trades in the JSON (wallet clusters are always stored).
+  store_trades: true
+
+anomaly:
+  # Phase 4: turn collected activity into investigation leads. A market's
+  # lead_score = sum over fired signals of weight * min(value/threshold, 3).
+  # A signal fires once its measured value reaches its threshold. Tune in
+  # Phase 6 against backtests.
+  weights:
+    price_jump: 1.5            # abrupt single-step move
+    abs_move: 1.0             # cumulative net move over the window
+    volume_spike: 1.0         # peak vs median period volume
+    wallet_concentration: 1.5  # one wallet dominating trade volume
+  thresholds:
+    price_jump_abs: 0.1        # min single-step move (probability points)
+    price_jump_z: 6.0          # ...and that move must be this many σ of normal
+    abs_move: 0.25            # |Δ probability| over the window
+    volume_spike: 5.0         # peak / median period volume
+    wallet_concentration: 0.5  # top wallet's share of volume
+  tiers:
+    high: 3.0
+    medium: 1.5
 
 output:
   dir: "reports"
