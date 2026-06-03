@@ -70,6 +70,15 @@ class ScoringTests(unittest.TestCase):
         rate_buckets = [b for b in r.matched_buckets if b.bucket == "rates_and_fed"]
         self.assertFalse(any("fed" in b.matched_keywords for b in rate_buckets))
 
+    def test_plural_keywords_match_singular_taxonomy_terms(self):
+        # Markets say "rate cuts"/"interest rates"; the taxonomy lists the
+        # singular forms. Both should still match (and two hits -> watch).
+        r = score_market(mk("Will the Fed make rate cuts as interest rates fall?"), self.tax)
+        matched = {kw for b in r.matched_buckets for kw in b.matched_keywords}
+        self.assertIn("rate cut", matched)
+        self.assertIn("interest rate", matched)
+        self.assertEqual(decide(r), "watch")
+
     def test_thresholds_respected(self):
         r = score_market(mk("Mortgage rate above 7%?"), self.tax)  # rates weight 1.0
         # One rate keyword == 1.0 -> review, not watch, with defaults.

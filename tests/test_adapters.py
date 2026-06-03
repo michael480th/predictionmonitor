@@ -7,6 +7,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from requests.exceptions import HTTPError  # noqa: E402
+
 from predictionmonitor.adapters.kalshi import KalshiAdapter  # noqa: E402
 from predictionmonitor.adapters.polymarket import PolymarketAdapter  # noqa: E402
 
@@ -16,6 +18,31 @@ FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 def load_fixture(name):
     with open(os.path.join(FIXTURES, name), "r", encoding="utf-8") as fh:
         return json.load(fh)
+
+
+class _FakeResponse:
+    def __init__(self, payload, status_code=200):
+        self._payload = payload
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise HTTPError(f"{self.status_code} error", response=self)
+
+    def json(self):
+        return self._payload
+
+
+class _FakeSession:
+    """Records GET params and replays a queued list of responses."""
+
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None, headers=None):
+        self.calls.append(params or {})
+        return self._responses.pop(0)
 
 
 class PolymarketMappingTests(unittest.TestCase):
@@ -56,6 +83,40 @@ class PolymarketMappingTests(unittest.TestCase):
         m = self.adapter._to_market(self.rows[0])
         self.assertIn("fed", m.search_text)
         self.assertIn("june 2026", m.search_text)
+
+
+class PolymarketPaginationTests(unittest.TestCase):
+    def _adapter(self, session):
+        return PolymarketAdapter(
+            base_url="https://example.test",
+            session=session,
+            page_size=100,
+            max_pages=200,
+        )
+
+    def test_requests_highest_volume_first(self):
+        session = _FakeSession([_FakeResponse([])])  # empty -> stop immediately
+        list(self._adapter(session).iter_markets())
+        self.assertEqual(session.calls[0].get("order"), "volumeNum")
+        self.assertEqual(session.calls[0].get("ascending"), "false")
+
+    def test_stops_gracefully_on_offset_ceiling_422(self):
+        # 100 full pages walk offset 0..9900; the request at offset 10000 then
+        # 422s ("offset too large") and must end iteration cleanly — no raise,
+        # keeping every market gathered so far.
+        rows = load_fixture("polymarket_markets.json")
+        full_page = [rows[0]] * 100  # a full page forces another request
+        session = _FakeSession(
+            [_FakeResponse(full_page)] * 100 + [_FakeResponse("offset too large", 422)]
+        )
+        markets = list(self._adapter(session).iter_markets())
+        self.assertEqual(len(markets), 100 * 100)
+        self.assertEqual(session.calls[-1].get("offset"), 10000)
+
+    def test_non_ceiling_http_error_propagates(self):
+        session = _FakeSession([_FakeResponse("boom", 500)])
+        with self.assertRaises(HTTPError):
+            list(self._adapter(session).iter_markets())
 
 
 class KalshiMappingTests(unittest.TestCase):

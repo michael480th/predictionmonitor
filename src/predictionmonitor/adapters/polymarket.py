@@ -13,6 +13,8 @@ import logging
 import time
 from typing import Any, Iterator, Optional
 
+from requests.exceptions import HTTPError
+
 from predictionmonitor.adapters.base import Adapter
 from predictionmonitor.http import get_json
 from predictionmonitor.schema import (
@@ -32,6 +34,12 @@ log = logging.getLogger(__name__)
 # the "short page" stop condition fire after the very first page.)
 _MAX_PAGE = 100
 
+# Gamma also rejects `offset` beyond ~10k with a 422 ("offset too large, use
+# /markets/keyset for deeper pagination"). We sort by descending volume and stop
+# at that ceiling, so the markets we keep are the most significant ones — which
+# is exactly what a monitor wants, and well inside the cap.
+_MAX_OFFSET = 10_000
+
 # Activity lives on different hosts than the Gamma catalog API.
 _DEFAULT_CLOB_URL = "https://clob.polymarket.com"
 _DEFAULT_DATA_URL = "https://data-api.polymarket.com"
@@ -44,17 +52,35 @@ class PolymarketAdapter(Adapter):
         limit = min(self.page_size, _MAX_PAGE)
         offset = 0
         for _page in range(self.max_pages):
-            params: dict[str, Any] = {"limit": limit, "offset": offset}
+            # Highest-volume markets first, so the most monitor-worthy ones land
+            # inside Gamma's ~10k offset ceiling rather than past it.
+            params: dict[str, Any] = {
+                "limit": limit,
+                "offset": offset,
+                "order": "volumeNum",
+                "ascending": "false",
+            }
             if self.only_open:
                 # Open == not yet closed and currently active/tradable.
                 params["closed"] = "false"
                 params["active"] = "true"
-            data = get_json(
-                self.session,
-                f"{self.base_url}/markets",
-                params=params,
-                timeout=self.timeout,
-            )
+            try:
+                data = get_json(
+                    self.session,
+                    f"{self.base_url}/markets",
+                    params=params,
+                    timeout=self.timeout,
+                )
+            except HTTPError as exc:
+                # 422 past the offset ceiling is the documented end of keyset-less
+                # pagination — stop cleanly with what we have, don't fail the platform.
+                resp = exc.response
+                if resp is not None and resp.status_code == 422 and offset >= _MAX_OFFSET:
+                    log.info(
+                        "polymarket: reached Gamma offset ceiling (%d); stopping", offset
+                    )
+                    return
+                raise
             # Gamma returns either a bare list or {"data": [...]}.
             rows = data.get("data") if isinstance(data, dict) else data
             if not rows:
@@ -66,6 +92,10 @@ class PolymarketAdapter(Adapter):
             if len(rows) < limit:
                 return
             offset += limit
+            if offset > _MAX_OFFSET:
+                # Next request would exceed the ceiling; stop before the 422.
+                log.info("polymarket: stopping at offset cap (%d markets)", offset)
+                return
 
     @staticmethod
     def _parse_json_list(value: Any) -> list:
