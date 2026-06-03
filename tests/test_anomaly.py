@@ -24,6 +24,7 @@ TIERS = {"high": 3.0, "medium": 1.5}
 def activity(
     *, prices=None, volumes=None, top_wallet_share=None, platform="polymarket",
     market_id="m1", title="A market", decision="watch", score=3.0,
+    event_id=None, event_title=None,
 ):
     points = []
     prices = prices or []
@@ -38,6 +39,7 @@ def activity(
     return {
         "platform": platform, "market_id": market_id, "title": title,
         "url": "https://example.test/x", "decision": decision, "score": score,
+        "event_id": event_id, "event_title": event_title,
         "price_points": points, "stats": stats,
     }
 
@@ -151,6 +153,37 @@ class RunAndOutputTests(unittest.TestCase):
         self.assertEqual(thresholds["abs_move"], 0.01)
         # Other thresholds keep their defaults.
         self.assertEqual(thresholds["volume_spike"], DEFAULT_SIGNAL_THRESHOLDS["volume_spike"])
+
+    def test_events_group_sibling_markets(self):
+        jump = [0.50, 0.505, 0.50, 0.505, 0.50, 0.95]  # fires price_jump + abs_move
+        result_input = {
+            "window_days": 14,
+            "activity": [
+                activity(prices=jump, market_id="fed-a", title="Fed ≤1%",
+                         event_id="EV1", event_title="Fed rate ladder"),
+                activity(prices=jump, market_id="fed-b", title="Fed ≤2%",
+                         event_id="EV1", event_title="Fed rate ladder"),
+                activity(prices=jump, market_id="solo", title="Freddie IPO",
+                         event_id="EV2", event_title="Freddie IPO"),
+            ],
+        }
+        res = run_leads(result_input, {})
+        # Three flagged markets, but only two events.
+        self.assertEqual(len(res["events"]), 2)
+        ladder = next(e for e in res["events"] if e["event_id"] == "EV1")
+        self.assertEqual(ladder["n_markets"], 2)
+        self.assertEqual(ladder["n_flagged"], 2)
+        self.assertEqual(len(ladder["members"]), 2)
+        self.assertGreaterEqual(res["event_counts"]["high"], 1)
+
+    def test_marketless_event_id_falls_back_to_market(self):
+        # No event_id -> each market is its own event group.
+        result_input = {"activity": [
+            activity(prices=[0.2, 0.3, 0.45, 0.6, 0.75], market_id="x"),
+            activity(prices=[0.2, 0.3, 0.45, 0.6, 0.75], market_id="y"),
+        ]}
+        res = run_leads(result_input, {})
+        self.assertEqual(len(res["events"]), 2)
 
     def test_write_leads_files(self):
         res = run_leads(self.result_input, {})

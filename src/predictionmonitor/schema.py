@@ -83,11 +83,21 @@ class Market:
         return cls(**{k: v for k, v in fields.items() if k in allowed})
 
     @property
-    def search_text(self) -> str:
-        """Concatenated text used by Phase 2 relevance scoring."""
-        parts = [self.title, self.event_title or "", self.description or "",
-                 self.category or "", " ".join(self.tags)]
+    def strong_text(self) -> str:
+        """High-signal fields: the question itself and its event title."""
+        parts = [self.title, self.event_title or ""]
         return " ".join(p for p in parts if p).lower()
+
+    @property
+    def weak_text(self) -> str:
+        """Lower-signal fields: description/category/tags (often boilerplate)."""
+        parts = [self.description or "", self.category or "", " ".join(self.tags)]
+        return " ".join(p for p in parts if p).lower()
+
+    @property
+    def search_text(self) -> str:
+        """All text used by Phase 2 relevance scoring (strong + weak)."""
+        return " ".join(p for p in (self.strong_text, self.weak_text) if p)
 
 
 def parse_float(value: Any) -> Optional[float]:

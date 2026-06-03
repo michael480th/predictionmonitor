@@ -33,6 +33,9 @@ relevance:
   # Tune these as false-positive/negative rates become clear (Phase 6).
   watch_threshold: 2.0
   review_threshold: 1.0
+  # Keywords found only in a market's description/tags (not its title/event)
+  # count this much vs. a title hit — sharpens precision against boilerplate.
+  description_weight: 0.5
 
 activity:
   # Phase 3: how much recent activity to pull for each watchlisted market.

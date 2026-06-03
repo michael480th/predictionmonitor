@@ -81,6 +81,28 @@ class ScoringTests(unittest.TestCase):
         r = score_market(mk("Fed rate decision and inflation in 2026"), self.tax)
         self.assertIn("Rates & Fed", r.reason)
 
+    def test_description_only_match_is_weighted_down(self):
+        # A crypto market that only mentions "federal reserve" in boilerplate
+        # description should fall below the review threshold (the real bug).
+        m = mk(
+            "US national Bitcoin reserve before 2027?",
+            desc="Resolves YES per Federal Reserve announcements.",
+        )
+        r = score_market(m, self.tax)  # default description_weight = 0.5
+        self.assertEqual(r.score, 0.5)               # 1.0 weight * 0.5 factor
+        self.assertEqual(decide(r), "ignore")        # below review threshold (1.0)
+        # And the match is recorded as weak, not strong, for transparency.
+        bm = next(b for b in r.matched_buckets if b.bucket == "rates_and_fed")
+        self.assertIn("federal reserve", bm.weak_keywords)
+        self.assertEqual(bm.strong_keywords, [])
+
+    def test_title_match_unaffected_by_weighting(self):
+        # Same keyword in the title keeps full weight.
+        r = score_market(mk("Federal Reserve emergency meeting?"), self.tax)
+        bm = next(b for b in r.matched_buckets if b.bucket == "rates_and_fed")
+        self.assertIn("federal reserve", bm.strong_keywords)
+        self.assertEqual(decide(r), "review")        # 1.0 -> review
+
 
 class FilterAndOutputTests(unittest.TestCase):
     def setUp(self):

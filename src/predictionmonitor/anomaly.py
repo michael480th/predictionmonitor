@@ -108,6 +108,8 @@ class LeadResult:
     lead_score: float
     tier: str                        # high|medium|low
     signals: list[Signal] = field(default_factory=list)
+    event_id: Optional[str] = None
+    event_title: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -115,6 +117,8 @@ class LeadResult:
             "market_id": self.market_id,
             "title": self.title,
             "url": self.url,
+            "event_id": self.event_id,
+            "event_title": self.event_title,
             "relevance_decision": self.relevance_decision,
             "relevance_score": self.relevance_score,
             "lead_score": self.lead_score,
@@ -236,12 +240,65 @@ def score_activity(
         market_id=activity.get("market_id", ""),
         title=activity.get("title", ""),
         url=activity.get("url", ""),
+        event_id=activity.get("event_id"),
+        event_title=activity.get("event_title"),
         relevance_decision=activity.get("decision", ""),
         relevance_score=activity.get("score", 0.0),
         lead_score=lead_score,
         tier=_tier(lead_score, tiers),
         signals=signals,
     )
+
+
+def _group_events(leads: list[LeadResult]) -> list[dict[str, Any]]:
+    """Collapse sibling markets into one lead per event.
+
+    Many sub-markets of a single event (e.g. a Fed-rate ladder) re-price
+    together, so reporting them as one lead per event keeps a single news event
+    from flooding the report. An event's headline is its highest-scoring market;
+    the flagged siblings travel with it as members.
+    """
+    groups: dict[tuple, list[LeadResult]] = {}
+    order: list[tuple] = []
+    for r in leads:
+        key = (r.platform, r.event_id or f"market:{r.market_id}")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(r)
+
+    events: list[dict[str, Any]] = []
+    for key in order:
+        members = sorted(groups[key], key=lambda r: r.lead_score, reverse=True)
+        head = members[0]
+        flagged = [m for m in members if m.tier != "low"]
+        events.append(
+            {
+                "platform": head.platform,
+                "event_id": head.event_id,
+                "event_title": head.event_title or head.title,
+                "url": head.url,
+                "lead_score": head.lead_score,
+                "tier": head.tier,
+                "n_markets": len(members),
+                "n_flagged": len(flagged),
+                "headline_market": head.title,
+                "top_signals": [s.to_dict() for s in head.signals],
+                "members": [
+                    {
+                        "market_id": m.market_id,
+                        "title": m.title,
+                        "url": m.url,
+                        "lead_score": m.lead_score,
+                        "tier": m.tier,
+                        "signals": [s.to_dict() for s in m.signals],
+                    }
+                    for m in flagged
+                ],
+            }
+        )
+    events.sort(key=lambda e: e["lead_score"], reverse=True)
+    return events
 
 
 def anomaly_config(settings: dict[str, Any]) -> tuple[dict, dict, dict]:
@@ -266,9 +323,14 @@ def run_leads(
     ]
     leads.sort(key=lambda r: r.lead_score, reverse=True)
 
+    events = _group_events(leads)
+
     counts = {"high": 0, "medium": 0, "low": 0}
     for r in leads:
         counts[r.tier] += 1
+    event_counts = {"high": 0, "medium": 0, "low": 0}
+    for e in events:
+        event_counts[e["tier"]] += 1
 
     return {
         "generated_at": date.today().isoformat(),
@@ -276,7 +338,9 @@ def run_leads(
         "thresholds": thresholds,
         "weights": weights,
         "tiers": tiers,
-        "counts": counts,
+        "counts": counts,                # per market
+        "event_counts": event_counts,    # per event (grouped)
+        "events": events,
         "leads": [r.to_dict() for r in leads],
     }
 
@@ -310,49 +374,65 @@ def write_leads(result: dict[str, Any], output_dir: str = "reports") -> tuple[st
     return json_path, md_path
 
 
-def _render_rows(leads: list[dict[str, Any]]) -> str:
-    if not leads:
+def _signals_text(signals: list[dict[str, Any]]) -> str:
+    parts = []
+    for s in signals:
+        sigma = (s.get("detail") or {}).get("sigma")
+        extra = f", {sigma}σ" if sigma is not None else ""
+        parts.append(f"{s['label']} {s['value']} (≥{s['threshold']}{extra})")
+    return "; ".join(parts) or "—"
+
+
+def _render_events(events: list[dict[str, Any]]) -> str:
+    if not events:
         return "_None._\n"
-    lines = [
-        "| Lead | Tier | Platform | Market | Signals |",
-        "|-----:|------|----------|--------|---------|",
-    ]
-    for r in leads:
-        title = r["title"].replace("|", "\\|")
-        parts = []
-        for s in r["signals"]:
-            extra = ""
-            sigma = (s.get("detail") or {}).get("sigma")
-            if sigma is not None:
-                extra = f", {sigma}σ"
-            parts.append(f"{s['label']} {s['value']} (≥{s['threshold']}{extra})")
-        why = "; ".join(parts) or "—"
-        lines.append(
-            f"| {r['lead_score']:.2f} | {r['tier']} | {r['platform']} | "
-            f"[{title}]({r['url']}) | {why} |"
+    blocks: list[str] = []
+    for e in events:
+        title = (e["event_title"] or "").replace("|", "\\|")
+        sib = ""
+        if e["n_markets"] > 1:
+            sib = f" · {e['n_flagged']} of {e['n_markets']} markets flagged"
+        header = (
+            f"**{e['lead_score']:.2f} — [{title}]({e['url']})** "
+            f"({e['platform']}{sib})  \n"
+            f"Top: _{e['headline_market']}_ — {_signals_text(e['top_signals'])}"
         )
-    return "\n".join(lines) + "\n"
+        # If several sibling markets fired, list them for the reviewer.
+        if e["n_markets"] > 1 and len(e["members"]) > 1:
+            rows = ["", "", "| Lead | Market | Signals |", "|-----:|--------|---------|"]
+            for m in e["members"]:
+                mt = m["title"].replace("|", "\\|")
+                rows.append(
+                    f"| {m['lead_score']:.2f} | [{mt}]({m['url']}) | "
+                    f"{_signals_text(m['signals'])} |"
+                )
+            header += "\n" + "\n".join(rows)
+        blocks.append(header)
+    return "\n\n".join(blocks) + "\n"
 
 
 def _render_markdown(today: str, result: dict[str, Any]) -> str:
-    counts = result.get("counts", {})
-    leads = result.get("leads", [])
-    high = [r for r in leads if r["tier"] == "high"]
-    medium = [r for r in leads if r["tier"] == "medium"]
+    ec = result.get("event_counts", {})
+    mc = result.get("counts", {})
+    events = result.get("events", [])
+    high = [e for e in events if e["tier"] == "high"]
+    medium = [e for e in events if e["tier"] == "medium"]
 
     return (
         f"# FMCC Prediction-Market Leads — {today}\n\n"
-        "> **Lead, not a finding.** Each row flags FMCC-relevant market activity "
-        "that is *statistically unusual* over the collection window — a prompt "
-        "for Compliance to look closer, **not** evidence of wrongdoing or any "
-        "attribution to a person. Signals are computed from public price/volume "
-        "series and opaque wallet cluster keys only.\n\n"
+        "> **Lead, not a finding.** Each entry flags FMCC-relevant market "
+        "activity that is *statistically unusual* over the collection window — a "
+        "prompt for Compliance to look closer, **not** evidence of wrongdoing or "
+        "any attribution to a person. Signals are computed from public "
+        "price/volume series and opaque wallet cluster keys only.\n\n"
         f"**Window:** {result.get('source_window_days')} days · "
-        f"**High:** {counts.get('high', 0)} · "
-        f"**Medium:** {counts.get('medium', 0)} · "
-        f"**Low/none:** {counts.get('low', 0)}\n\n"
+        f"**Events:** {ec.get('high', 0)} high / {ec.get('medium', 0)} medium / "
+        f"{ec.get('low', 0)} low "
+        f"(across {mc.get('high', 0)} + {mc.get('medium', 0)} flagged markets)\n\n"
+        "Leads are grouped by event: sibling markets of one event (e.g. a "
+        "rate ladder) that re-price together appear as a single lead.\n\n"
         "## High-priority leads\n\n"
-        f"{_render_rows(high)}\n"
+        f"{_render_events(high)}\n"
         "## Medium-priority leads\n\n"
-        f"{_render_rows(medium)}"
+        f"{_render_events(medium)}"
     )

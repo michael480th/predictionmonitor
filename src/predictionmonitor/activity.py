@@ -60,6 +60,8 @@ class MarketActivity:
     score: float
     window_days: int
     collected_at: str
+    event_id: Optional[str] = None      # for grouping sibling markets in Phase 4
+    event_title: Optional[str] = None
     price_points: list[PricePoint] = field(default_factory=list)
     trades: list[Trade] = field(default_factory=list)
     wallet_clusters: list[WalletCluster] = field(default_factory=list)
@@ -186,6 +188,8 @@ def collect_market_activity(
         score=score,
         window_days=window_days,
         collected_at=datetime.now(timezone.utc).isoformat(),
+        event_id=market.event_id,
+        event_title=market.event_title,
         price_points=price_points,
         trades=trades if store_trades else [],
         wallet_clusters=clusters,

@@ -15,6 +15,7 @@ from predictionmonitor.catalog import (
     write_catalog,
 )
 from predictionmonitor.relevance import (
+    description_weight,
     filter_markets,
     load_taxonomy,
     relevance_thresholds,
@@ -87,7 +88,11 @@ def _cmd_filter(args: argparse.Namespace) -> int:
 
     print(f"Scoring {len(markets)} markets from {catalog_path}", file=sys.stderr)
     result = filter_markets(
-        markets, taxonomy, watch_threshold=watch_th, review_threshold=review_th
+        markets,
+        taxonomy,
+        watch_threshold=watch_th,
+        review_threshold=review_th,
+        description_weight=description_weight(settings),
     )
     json_path, md_path = write_watchlist(result, output_dir=output_dir)
 
@@ -169,10 +174,11 @@ def _cmd_leads(args: argparse.Namespace) -> int:
     result = run_leads(activity_result, settings)
     json_path, md_path = write_leads(result, output_dir=output_dir)
 
-    counts = result["counts"]
+    ec = result["event_counts"]
+    mc = result["counts"]
     print(
-        f"\nHigh: {counts['high']}  Medium: {counts['medium']}  "
-        f"Low/none: {counts['low']}"
+        f"\nEvents — High: {ec['high']}  Medium: {ec['medium']}  Low/none: {ec['low']}"
+        f"  (markets flagged: {mc['high']} high, {mc['medium']} medium)"
     )
     print(f"Wrote {json_path}\n      {md_path}")
     return 0

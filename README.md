@@ -79,7 +79,10 @@ PATH`) against `config/taxonomy.yml` and writes:
 - `reports/watchlist-YYYY-MM-DD.md` — a reviewer-friendly report
 
 Each market's score is `sum over taxonomy buckets of weight * (distinct
-keywords matched)`. A market is **watched** at score ≥ `watch_threshold`,
+keywords matched)`, where a keyword found only in the description/tags counts
+`description_weight` (default 0.5) of a title/event hit — so boilerplate that
+merely name-drops "Federal Reserve" doesn't qualify a crypto market. A market is
+**watched** at score ≥ `watch_threshold`,
 flagged for **review** at ≥ `review_threshold`, **excluded** if it hits an
 exclusion keyword, else **ignored**. Thresholds live in `config/settings.yml`.
 Scoring is intentionally simple and explainable — every decision carries the
@@ -119,6 +122,10 @@ extreme the anomaly is, capped so no single signal dominates. Signals:
 | `abs_move` | cumulative \|Δ probability\| over the window ≥ `abs_move` | the market re-priced materially |
 | `volume_spike` | peak period volume ÷ median ≥ `volume_spike` | needs per-period volume (Kalshi candlesticks) |
 | `wallet_concentration` | top wallet's share of trade volume ≥ `wallet_concentration` | Polymarket only (Kalshi is anonymous) |
+
+Leads are **grouped by event**: sibling markets of one event (e.g. a Fed-rate
+ladder whose rungs all re-price on the same news) collapse into a single lead,
+headlined by the highest-scoring market, so one event can't flood the report.
 
 Every flagged market carries exactly which signals fired, their measured value,
 the threshold crossed, and (for `price_jump`) the σ — same explainable spirit as
