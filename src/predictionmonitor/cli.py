@@ -33,6 +33,7 @@ from predictionmonitor.anomaly import (
     run_leads,
     write_leads,
 )
+from predictionmonitor.pipeline import run_daily
 
 
 def _enabled_platforms(settings: dict) -> list[str]:
@@ -184,6 +185,36 @@ def _cmd_leads(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_daily(args: argparse.Namespace) -> int:
+    settings = load_settings(args.settings)
+    output_dir = settings.get("output", {}).get("dir", "reports")
+
+    platforms = [args.platform] if args.platform else None
+    print("Running daily scan (catalog -> filter -> activity -> leads)",
+          file=sys.stderr)
+    summary = run_daily(
+        settings,
+        platforms=platforms,
+        max_markets=args.max,
+        window_days=args.window_days,
+        include_review=args.include_review,
+        taxonomy_path=args.taxonomy,
+        output_dir=output_dir,
+    )
+
+    cat = summary["catalog"]
+    rel = summary["relevance"]
+    ec = summary["leads"]["event_counts"]
+    print(
+        f"\nCatalog: {cat['total']}  |  Watch: {rel.get('watch', 0)} "
+        f"Review: {rel.get('review', 0)}  |  Leads: {ec.get('high', 0)} high, "
+        f"{ec.get('medium', 0)} medium events"
+    )
+    print(f"Digest: {summary['artifacts']['digest']}")
+    # Non-zero exit only if every platform failed to catalog anything.
+    return 0 if cat["total"] > 0 else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="predictionmonitor",
@@ -279,6 +310,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--settings", default="config/settings.yml", help="path to settings.yml"
     )
     leads.set_defaults(func=_cmd_leads)
+
+    daily = sub.add_parser(
+        "daily",
+        help="run the whole pipeline and write a daily digest (for the cron)",
+    )
+    daily.add_argument(
+        "--platform",
+        choices=["polymarket", "kalshi"],
+        help="restrict to a single platform (default: all enabled)",
+    )
+    daily.add_argument(
+        "--max", type=int, default=None, help="cap markets per platform"
+    )
+    daily.add_argument(
+        "--window-days",
+        type=int,
+        default=None,
+        help="activity history window (default: settings activity.window_days)",
+    )
+    daily.add_argument(
+        "--include-review",
+        action="store_true",
+        help="also collect activity/leads for borderline 'review' markets",
+    )
+    daily.add_argument(
+        "--taxonomy", default="config/taxonomy.yml", help="path to taxonomy.yml"
+    )
+    daily.add_argument(
+        "--settings", default="config/settings.yml", help="path to settings.yml"
+    )
+    daily.set_defaults(func=_cmd_daily)
     return parser
 
 

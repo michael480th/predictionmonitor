@@ -24,7 +24,7 @@ for Compliance to investigate**.
 | 2 | Relevance filtering (taxonomy scoring) → watchlist | ✅ done |
 | 3 | Activity collection (price/volume/trade/wallet time series) | ✅ done |
 | 4 | Anomaly detection + lead scoring | ✅ done |
-| 5 | Daily report + GitHub Actions cron | ⬜ planned |
+| 5 | Daily report + GitHub Actions cron | ✅ done |
 | 6 | Backtest / threshold tuning | ⬜ planned |
 
 ## Data sources (Phase 1)
@@ -65,6 +65,9 @@ python -m predictionmonitor activity --window-days 30 --max-markets 5
 
 # Score the collected activity for anomalies -> investigation leads
 python -m predictionmonitor leads
+
+# ...or run the whole pipeline in one shot and get a daily digest
+python -m predictionmonitor daily --window-days 30
 
 # Inspect output
 ls reports/
@@ -139,6 +142,29 @@ investigate, never a finding**.
 > GitHub Actions (Phase 5) or any host with open network. Unit tests run
 > offline against captured sample payloads.
 
+## Daily scan & automation (Phase 5)
+
+`daily` runs the whole pipeline in one process — catalog → filter → activity →
+leads — and writes a top-level digest, `reports/report-YYYY-MM-DD.md`, that
+summarizes the run and lists the top event-leads with links to the per-stage
+reports:
+
+```bash
+python -m predictionmonitor daily               # all enabled platforms
+python -m predictionmonitor daily --platform polymarket --max 3000 --window-days 30
+python -m predictionmonitor daily --include-review   # also borderline markets
+```
+
+`.github/workflows/daily.yml` runs `daily` on a **12:00 UTC cron** (and on
+demand via *Run workflow*, with window/cap/include-review inputs). GitHub-hosted
+runners have open network, so the Polymarket trades/wallet endpoints and Kalshi
+activity — which a restricted dev sandbox may block — are reachable there. Each
+run publishes the digest to the **job summary** and uploads every report
+(`.md` + `.json`) as a 90-day **artifact**. Reports stay gitignored, so the cron
+never commits to the repo. Kalshi reads are public; set the optional
+`KALSHI_API_KEY_ID` / `KALSHI_API_PRIVATE_KEY` repo secrets only if you hit rate
+or auth limits.
+
 ## Tests
 
 ```bash
@@ -160,7 +186,8 @@ src/predictionmonitor/
   watchlist.py         writes watchlist JSON + Markdown report
   activity.py          Phase 3: collect activity for watched markets -> report
   anomaly.py           Phase 4: anomaly signals + lead scoring -> leads report
-  cli.py               `python -m predictionmonitor` (catalog|filter|activity|leads)
+  pipeline.py          Phase 5: daily orchestration + digest report
+  cli.py               `python -m predictionmonitor` (catalog|filter|activity|leads|daily)
 config/
   taxonomy.yml         FMCC relevance taxonomy (used in Phase 2)
   settings.yml         runtime settings

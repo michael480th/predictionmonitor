@@ -1,0 +1,85 @@
+name: Daily scan
+
+# Runs the full FMCC scan (catalog -> filter -> activity -> leads) on a daily
+# cron and on demand. Unlike the sandboxed dev environment, GitHub-hosted
+# runners have open network, so the Polymarket trades/wallet endpoints and
+# Kalshi activity are reachable here. Output is published as a job summary and
+# as downloadable artifacts (reports are gitignored, so nothing is committed).
+
+on:
+  schedule:
+    - cron: "0 12 * * *"        # 12:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: "Activity history window (days)"
+        required: false
+        default: "30"
+      max_markets:
+        description: "Cap markets per platform (blank = no cap)"
+        required: false
+        default: ""
+      include_review:
+        description: "Also scan borderline 'review' markets"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run daily scan
+        env:
+          # Optional — only needed if you hit Kalshi rate/auth limits.
+          KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+          KALSHI_API_PRIVATE_KEY: ${{ secrets.KALSHI_API_PRIVATE_KEY }}
+          WINDOW_DAYS: ${{ github.event.inputs.window_days || '30' }}
+          MAX_MARKETS: ${{ github.event.inputs.max_markets || '' }}
+          INCLUDE_REVIEW: ${{ github.event.inputs.include_review || 'false' }}
+        run: |
+          ARGS="-v --window-days ${WINDOW_DAYS}"
+          if [ -n "${MAX_MARKETS}" ]; then ARGS="${ARGS} --max ${MAX_MARKETS}"; fi
+          if [ "${INCLUDE_REVIEW}" = "true" ]; then ARGS="${ARGS} --include-review"; fi
+          echo "predictionmonitor daily ${ARGS}"
+          predictionmonitor daily ${ARGS}
+
+      - name: Publish digest to job summary
+        if: always()
+        run: |
+          digest="$(ls -t reports/report-*.md 2>/dev/null | head -1)"
+          if [ -n "${digest}" ]; then
+            cat "${digest}" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "No digest produced — see the run log." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ github.run_id }}
+          path: |
+            reports/*.md
+            reports/*.json
+          if-no-files-found: warn
+          retention-days: 90
