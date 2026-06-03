@@ -174,18 +174,36 @@ class Trade:
     wallet_address: Optional[str] = None  # raw on-chain address, for investigation
     tx_hash: Optional[str] = None      # settlement transaction hash, for investigation
     pseudonym: Optional[str] = None    # platform's public handle for the wallet, if any
+    market_slug: Optional[str] = None  # platform slug, to link back to the bet's page
 
     @property
     def tx_url(self) -> Optional[str]:
-        """Block-explorer link to the settlement transaction, if known."""
+        """Block-explorer link to the settlement transaction, if known.
+
+        This is the exact trade on-chain, but a raw token-transfer ledger — kept
+        as a secondary "receipt" link rather than the primary investigation path.
+        """
         return f"https://polygonscan.com/tx/{self.tx_hash}" if self.tx_hash else None
 
     @property
     def account_url(self) -> Optional[str]:
-        """Polymarket profile for the trading wallet, if known."""
+        """The trading wallet's Polymarket *activity* feed (its trade history).
+
+        Deep-links to the activity tab rather than the profile landing page, so
+        the reviewer lands on the list of this wallet's trades (Polymarket has no
+        URL that opens one specific trade). Falls back gracefully: an unknown
+        `tab` param just renders the profile.
+        """
         if not self.wallet_address:
             return None
-        return f"https://polymarket.com/profile/{self.wallet_address}"
+        return f"https://polymarket.com/profile/{self.wallet_address}?tab=activity"
+
+    @property
+    def market_url(self) -> Optional[str]:
+        """Link to the bet's own Polymarket page, if the slug is known."""
+        if not self.market_slug:
+            return None
+        return f"https://polymarket.com/event/{self.market_slug}"
 
     @property
     def usd(self) -> Optional[float]:
@@ -218,6 +236,7 @@ class Trade:
         d = asdict(self)
         d["tx_url"] = self.tx_url
         d["account_url"] = self.account_url
+        d["market_url"] = self.market_url
         d["usd"] = self.usd
         d["actor_label"] = self.actor_label
         d["action"] = self.action

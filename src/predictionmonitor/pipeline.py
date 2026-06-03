@@ -166,21 +166,31 @@ def _num(x: Any) -> str:
 def _flagged_trades_lines(trades: list[dict[str, Any]]) -> list[str]:
     """Plain-English bullets for the biggest trades behind a lead.
 
-    Reads like "Brave-Honey bought $1,610 of Yes". The wallet name links to that
-    wallet's Polymarket profile (where its positions are visible); the on-chain
-    receipt is a small secondary link for anyone who wants the raw transaction.
+    Reads like "Brave-Honey bought $1,610 of Yes". Every fact you need is on the
+    line itself; the links just let you verify at the source — the trader name
+    opens that wallet's activity feed, the outcome opens the bet's page, and the
+    small "receipt" opens the exact on-chain transaction.
     """
     if not trades:
         return []
-    out = ["  - **Largest trades** (click a name to see that wallet's positions):"]
+    out = [
+        "  - **Largest trades** — trader → their activity, outcome → the bet:"
+    ]
     for tr in trades[:5]:
         actor = tr.get("actor_label") or "A wallet"
         action = tr.get("action") or "traded"
         amount = format_usd(tr.get("usd")) or f"{_num(tr.get('size'))} shares"
-        outcome = tr.get("outcome")
-        of = f" of {outcome}" if outcome else ""
-        profile = tr.get("account_url")
-        name = f"[{actor}]({profile})" if profile else actor
+        activity = tr.get("account_url")
+        name = f"[{actor}]({activity})" if activity else actor
+        outcome, market = tr.get("outcome"), tr.get("market_url")
+        if outcome and market:
+            of = f" of [{outcome}]({market})"
+        elif outcome:
+            of = f" of {outcome}"
+        elif market:
+            of = f" — [open bet]({market})"
+        else:
+            of = ""
         when = (tr.get("t") or "")[:16].replace("T", " ")
         receipt = f" · [receipt]({tr['tx_url']})" if tr.get("tx_url") else ""
         out.append(f"    - {name} {action} **{amount}**{of}  `{when}`{receipt}")

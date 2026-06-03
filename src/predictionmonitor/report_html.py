@@ -115,9 +115,9 @@ def _fmt_num(x: Any) -> str:
 def _flagged_trades_html(trades: list[dict[str, Any]]) -> str:
     """The biggest trades behind a lead, in plain English.
 
-    Reads like "Brave-Honey bought $1,610 of Yes". The wallet name links to that
-    wallet's Polymarket profile (its positions); the on-chain receipt is a small
-    secondary link.
+    Reads like "Brave-Honey bought $1,610 of Yes". Every fact is on the line; the
+    links just verify at the source — the trader name opens that wallet's activity
+    feed, the outcome opens the bet's page, and "receipt" opens the on-chain tx.
     """
     if not trades:
         return ""
@@ -126,11 +126,18 @@ def _flagged_trades_html(trades: list[dict[str, Any]]) -> str:
         actor = escape(tr.get("actor_label") or "A wallet")
         action = escape(tr.get("action") or "traded")
         amount = escape(format_usd(tr.get("usd")) or f'{_fmt_num(tr.get("size"))} shares')
-        outcome = tr.get("outcome")
-        of = f" of {escape(outcome)}" if outcome else ""
-        profile = tr.get("account_url")
-        name = (f'<a class="tx" href="{escape(profile)}">{actor}</a>'
-                if profile else f'<span class="tx">{actor}</span>')
+        activity = tr.get("account_url")
+        name = (f'<a class="tx" href="{escape(activity)}">{actor}</a>'
+                if activity else f'<span class="tx">{actor}</span>')
+        outcome, market = tr.get("outcome"), tr.get("market_url")
+        if outcome and market:
+            of = f' of <a href="{escape(market)}">{escape(outcome)}</a>'
+        elif outcome:
+            of = f" of {escape(outcome)}"
+        elif market:
+            of = f' — <a href="{escape(market)}">open bet</a>'
+        else:
+            of = ""
         receipt = (f' · <a href="{escape(tr["tx_url"])}">receipt</a>'
                    if tr.get("tx_url") else "")
         when = escape((tr.get("t") or "")[:16].replace("T", " "))
@@ -139,7 +146,7 @@ def _flagged_trades_html(trades: list[dict[str, Any]]) -> str:
             f'<span class="meta">· {when}{receipt}</span></li>'
         )
     return ('<div class="trades"><b>Largest trades</b> '
-            "(click a name to see that wallet's positions):"
+            "(trader → activity, outcome → the bet):"
             f'<ul>{"".join(items)}</ul></div>')
 
 

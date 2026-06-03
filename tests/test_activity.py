@@ -70,7 +70,8 @@ class PolymarketActivityTests(unittest.TestCase):
         rows = [
             {"proxyWallet": "0xWALLET", "transactionHash": "0xTX1", "side": "BUY",
              "size": 10, "price": 0.5, "timestamp": now - 100,
-             "outcome": "Yes", "pseudonym": "Brave-Honey"},
+             "outcome": "Yes", "pseudonym": "Brave-Honey",
+             "eventSlug": "freddie-mac-ipo"},
             {"proxyWallet": "0xWALLET", "transactionHash": "0xTX2", "side": "SELL",
              "size": 4, "price": 0.5, "timestamp": now - 200},
             # older than the window -> collection should stop here
@@ -87,8 +88,11 @@ class PolymarketActivityTests(unittest.TestCase):
         self.assertEqual(trades[0].wallet_address, "0xWALLET")
         self.assertEqual(trades[0].tx_hash, "0xTX1")
         self.assertEqual(trades[0].tx_url, "https://polygonscan.com/tx/0xTX1")
+        # The wallet link points at the activity feed (its trade history), not
+        # the bare profile landing page.
         self.assertEqual(
-            trades[0].account_url, "https://polymarket.com/profile/0xWALLET"
+            trades[0].account_url,
+            "https://polymarket.com/profile/0xWALLET?tab=activity",
         )
         self.assertEqual(trades[0].side, "buy")
         # Plain-English context for the report: which side of the bet, a friendly
@@ -98,6 +102,11 @@ class PolymarketActivityTests(unittest.TestCase):
         self.assertEqual(trades[0].actor_label, "Brave-Honey")
         self.assertEqual(trades[0].action, "bought")
         self.assertEqual(trades[0].usd, 5.0)
+        # The outcome links back to the bet's own page.
+        self.assertEqual(trades[0].market_slug, "freddie-mac-ipo")
+        self.assertEqual(
+            trades[0].market_url, "https://polymarket.com/event/freddie-mac-ipo"
+        )
         # A wallet with no handle falls back to its address.
         self.assertEqual(trades[1].actor_label, "0xWALLET")
 
