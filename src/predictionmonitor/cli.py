@@ -26,6 +26,12 @@ from predictionmonitor.activity import (
     run_activity,
     write_activity,
 )
+from predictionmonitor.anomaly import (
+    latest_activity_path,
+    load_activity,
+    run_leads,
+    write_leads,
+)
 
 
 def _enabled_platforms(settings: dict) -> list[str]:
@@ -145,6 +151,33 @@ def _cmd_activity(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_leads(args: argparse.Namespace) -> int:
+    settings = load_settings(args.settings)
+    output_dir = settings.get("output", {}).get("dir", "reports")
+
+    activity_path = args.activity or latest_activity_path(output_dir)
+    if not activity_path:
+        print(
+            "No activity file found. Run `predictionmonitor activity` first, "
+            "or pass --activity PATH.",
+            file=sys.stderr,
+        )
+        return 2
+
+    activity_result = load_activity(activity_path)
+    print(f"Scoring activity from {activity_path}", file=sys.stderr)
+    result = run_leads(activity_result, settings)
+    json_path, md_path = write_leads(result, output_dir=output_dir)
+
+    counts = result["counts"]
+    print(
+        f"\nHigh: {counts['high']}  Medium: {counts['medium']}  "
+        f"Low/none: {counts['low']}"
+    )
+    print(f"Wrote {json_path}\n      {md_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="predictionmonitor",
@@ -227,6 +260,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--settings", default="config/settings.yml", help="path to settings.yml"
     )
     act.set_defaults(func=_cmd_activity)
+
+    leads = sub.add_parser(
+        "leads",
+        help="score collected activity for anomalies -> investigation leads",
+    )
+    leads.add_argument(
+        "--activity",
+        help="activity JSON to score (default: newest in the reports dir)",
+    )
+    leads.add_argument(
+        "--settings", default="config/settings.yml", help="path to settings.yml"
+    )
+    leads.set_defaults(func=_cmd_leads)
     return parser
 
 

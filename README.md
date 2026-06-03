@@ -23,7 +23,7 @@ for Compliance to investigate**.
 | 1 | Catalog ingestion: Polymarket + Kalshi → normalized markets | ✅ done |
 | 2 | Relevance filtering (taxonomy scoring) → watchlist | ✅ done |
 | 3 | Activity collection (price/volume/trade/wallet time series) | ✅ done |
-| 4 | Anomaly detection + lead scoring | ⬜ planned |
+| 4 | Anomaly detection + lead scoring | ✅ done |
 | 5 | Daily report + GitHub Actions cron | ⬜ planned |
 | 6 | Backtest / threshold tuning | ⬜ planned |
 
@@ -62,6 +62,9 @@ python -m predictionmonitor filter
 python -m predictionmonitor activity                 # watched markets, 14-day window
 python -m predictionmonitor activity --include-review # also borderline markets
 python -m predictionmonitor activity --window-days 30 --max-markets 5
+
+# Score the collected activity for anomalies -> investigation leads
+python -m predictionmonitor leads
 
 # Inspect output
 ls reports/
@@ -104,6 +107,26 @@ and trade caps live under `activity:` in `config/settings.yml`.
 > land in any report and are never attributed to a person.** Kalshi is anonymous,
 > so its markets have price/volume/trade series but no wallet clusters.
 
+`leads` (Phase 4) scores the newest activity file for **statistically unusual**
+patterns and writes `reports/leads-YYYY-MM-DD.json` + `.md`, bucketed into
+high/medium/low tiers. A market's `lead_score` is the sum, over the signals that
+fired, of `weight * min(value / threshold, 3)` — so the score scales with how
+extreme the anomaly is, capped so no single signal dominates. Signals:
+
+| Signal | Fires when | Notes |
+|---|---|---|
+| `price_jump` | a single step moves ≥ `price_jump_abs` **and** is ≥ `price_jump_z` σ of the market's normal step volatility | the absolute floor stops a frozen market's tiny tick from looking like "many σ"; the σ test stops a slow steady drift from counting as a jump |
+| `abs_move` | cumulative \|Δ probability\| over the window ≥ `abs_move` | the market re-priced materially |
+| `volume_spike` | peak period volume ÷ median ≥ `volume_spike` | needs per-period volume (Kalshi candlesticks) |
+| `wallet_concentration` | top wallet's share of trade volume ≥ `wallet_concentration` | Polymarket only (Kalshi is anonymous) |
+
+Every flagged market carries exactly which signals fired, their measured value,
+the threshold crossed, and (for `price_jump`) the σ — same explainable spirit as
+Phase 2. Weights and thresholds live under `anomaly:` in `config/settings.yml`;
+markets lacking a feed (anonymous, or an unreachable endpoint) simply contribute
+fewer signals rather than failing. As always: a high score is a **lead to
+investigate, never a finding**.
+
 > **Network note.** The two API hosts must be reachable. In a sandbox with a
 > restricted egress allowlist they may be blocked; the scanner runs fully in
 > GitHub Actions (Phase 5) or any host with open network. Unit tests run
@@ -129,7 +152,8 @@ src/predictionmonitor/
   relevance.py         Phase 2: taxonomy scoring -> watch/review/ignore
   watchlist.py         writes watchlist JSON + Markdown report
   activity.py          Phase 3: collect activity for watched markets -> report
-  cli.py               `python -m predictionmonitor` (catalog | filter | activity)
+  anomaly.py           Phase 4: anomaly signals + lead scoring -> leads report
+  cli.py               `python -m predictionmonitor` (catalog|filter|activity|leads)
 config/
   taxonomy.yml         FMCC relevance taxonomy (used in Phase 2)
   settings.yml         runtime settings
