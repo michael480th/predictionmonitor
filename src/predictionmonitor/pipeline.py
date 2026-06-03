@@ -115,13 +115,16 @@ def run_daily(
         },
     }
 
-    # 5. Outputs: markdown digest, visual HTML report, cross-day timeline.
+    # 5. Outputs: markdown digest, visual HTML report (with cross-day timeline
+    # appended as a scroll-down section), and a standalone timeline page.
     digest_path = write_digest(summary, output_dir=output_dir)
-    html_path = write_html_report(
-        leads_result, activity_result, summary=summary, output_dir=output_dir
-    )
     append_run(leads_result, run_date=today, path=history_path)
-    timeline_path = write_timeline(load_history(history_path), output_dir=output_dir)
+    hist = load_history(history_path)
+    html_path = write_html_report(
+        leads_result, activity_result, summary=summary, history=hist,
+        output_dir=output_dir,
+    )
+    timeline_path = write_timeline(hist, output_dir=output_dir)
 
     summary["artifacts"].update(
         {"digest": digest_path, "report_html": html_path, "timeline_html": timeline_path}

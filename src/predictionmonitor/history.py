@@ -91,13 +91,28 @@ def _by_day(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [days[k] for k in sorted(days)]
 
 
-def render_timeline(history: list[dict[str, Any]]) -> str:
-    """Render the cross-day timeline as a self-contained HTML page."""
+# CSS for the timeline section, shared by the standalone page and the combined
+# report so the look matches in both.
+TIMELINE_CSS = (
+    ".tl-muted{color:#7f8c8d;font-size:13px;margin-bottom:6px}"
+    ".tl-tbl{border-collapse:collapse;width:100%}"
+    ".tl-tbl td,.tl-tbl th{padding:6px 8px;border-top:1px solid #f0f0f0;"
+    "text-align:left}"
+    ".tl-tbl th{color:#7f8c8d;font-size:12px;text-transform:uppercase}"
+    ".tl-lg span{display:inline-block;width:12px;height:12px;border-radius:3px;"
+    "margin:0 4px 0 12px;vertical-align:middle}"
+)
+
+
+def timeline_body(history: list[dict[str, Any]]) -> str:
+    """Inner HTML for the timeline (no page shell): daily bars + recurring table.
+
+    Reused by the standalone timeline page and embedded in the daily report.
+    """
     days = _by_day(history)
     total_days = len(days)
     total_events = len(history)
 
-    # Most-recurring events (flagged on the most distinct days).
     recur: dict[tuple, dict[str, Any]] = {}
     for r in history:
         key = (r["platform"], r.get("event_id") or r.get("event_title"))
@@ -109,42 +124,42 @@ def render_timeline(history: list[dict[str, Any]]) -> str:
         slot["max_score"] = max(slot["max_score"], r.get("lead_score") or 0)
     top = sorted(recur.values(), key=lambda s: (len(s["days"]), s["max_score"]),
                  reverse=True)[:12]
-
     rows = "".join(
         f'<tr><td>{len(s["days"])}</td><td>{s["max_score"]:.2f}</td>'
         f'<td><a href="{escape(s["url"])}">{escape(s["title"])}</a></td></tr>'
         for s in top
     ) or '<tr><td colspan="3">No events recorded yet.</td></tr>'
 
+    legend = (
+        f'<span class="tl-lg"><span style="background:{TIER_COLORS["high"]}"></span>'
+        f'high<span style="background:{TIER_COLORS["medium"]}"></span>medium</span>'
+    )
+    return (
+        f'<div class="tl-muted">{total_events} flagged events across '
+        f"{total_days} scan day(s)</div>"
+        f'<div class="section"><h2 style="margin-top:0;font-size:16px">'
+        f"Flagged events per day {legend}</h2>{daily_bars(days)}</div>"
+        f'<div class="section"><h2 style="margin-top:0;font-size:16px">'
+        "Most recurring events</h2><table class=\"tl-tbl\"><tr><th>Days flagged</th>"
+        f"<th>Peak lead</th><th>Event</th></tr>{rows}</table></div>"
+    )
+
+
+def render_timeline(history: list[dict[str, Any]]) -> str:
+    """Render the cross-day timeline as a standalone, self-contained HTML page."""
     css = (
         "body{font:14px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;"
         "color:#2c3e50;background:#f5f6f8;margin:0}.wrap{max-width:900px;"
         "margin:0 auto;padding:24px}.section{background:#fff;border:1px solid "
         "#e1e4e8;border-radius:10px;padding:16px 18px;margin:16px 0;overflow-x:auto}"
-        "h1{font-size:22px;margin:0}.k{color:#7f8c8d;font-size:13px}"
-        "table{border-collapse:collapse;width:100%}td,th{padding:6px 8px;"
-        "border-top:1px solid #f0f0f0;text-align:left}th{color:#7f8c8d;"
-        "font-size:12px;text-transform:uppercase}a{color:#1a5fb4;"
-        "text-decoration:none}.lg span{display:inline-block;width:12px;height:12px;"
-        "border-radius:3px;margin:0 4px 0 12px;vertical-align:middle}"
-    )
-    legend = (
-        f'<span class="lg"><span style="background:{TIER_COLORS["high"]}"></span>'
-        f'high<span style="background:{TIER_COLORS["medium"]}"></span>medium</span>'
-    )
+        "h1{font-size:22px;margin:0}a{color:#1a5fb4;text-decoration:none}"
+    ) + TIMELINE_CSS
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>FMCC Leads Timeline</title><style>{css}</style></head><body>"
         '<div class="wrap"><h1>FMCC Leads — Timeline</h1>'
-        f'<div class="k">{total_events} flagged events across {total_days} '
-        f"scan day(s)</div>"
-        f'<div class="section"><h2 style="margin-top:0;font-size:16px">'
-        f"Flagged events per day {legend}</h2>{daily_bars(days)}</div>"
-        '<div class="section"><h2 style="margin-top:0;font-size:16px">'
-        "Most recurring events</h2><table><tr><th>Days flagged</th>"
-        "<th>Peak lead</th><th>Event</th></tr>"
-        f"{rows}</table></div></div></body></html>"
+        f"{timeline_body(history)}</div></body></html>"
     )
 
 

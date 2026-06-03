@@ -176,7 +176,9 @@ def _cmd_leads(args: argparse.Namespace) -> int:
     print(f"Scoring activity from {activity_path}", file=sys.stderr)
     result = run_leads(activity_result, settings)
     json_path, md_path = write_leads(result, output_dir=output_dir)
-    html_path = write_html_report(result, activity_result, output_dir=output_dir)
+    html_path = write_html_report(
+        result, activity_result, history=load_history(), output_dir=output_dir
+    )
 
     ec = result["event_counts"]
     mc = result["counts"]

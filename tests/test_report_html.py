@@ -56,6 +56,18 @@ class RenderReportTests(unittest.TestCase):
         self.assertIn("<svg", html)                      # sparkline + timeline
         self.assertIn("Freddie Mac IPO &lt;script&gt;", html)  # escaped, not raw
         self.assertNotIn("<script>", html)
+        self.assertIn("last 30 days", html)              # full N-day window framing
+
+    def test_combined_page_includes_cross_day_timeline(self):
+        hist = [
+            {"date": "2026-06-02", "platform": "polymarket", "event_id": "E1",
+             "event_title": "Freddie Mac IPO", "tier": "high", "lead_score": 4.5,
+             "url": "https://x/e1"},
+        ]
+        html = render_report(_leads_result(), _activity_result(), history=hist)
+        self.assertIn("Activity over time", html)        # scroll-down section
+        self.assertIn("Flagged events per day", html)
+        self.assertIn("Most recurring events", html)
 
     def test_write_html_report(self):
         with tempfile.TemporaryDirectory() as d:

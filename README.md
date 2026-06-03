@@ -148,13 +148,14 @@ investigate, never a finding**.
 leads — and writes, for each run:
 
 - `reports/report-YYYY-MM-DD.md` — a top-level Markdown digest
-- `reports/report-YYYY-MM-DD.html` — a **visual** report (self-contained, no
-  dependencies): summary cards, a *"when the jumps happened"* timeline of the
-  window's detected jumps, and a price **sparkline** for every flagged market
-  with the jump dotted in red
-- `reports/timeline.html` — a **cross-day timeline** (events-per-day bars + the
-  most-recurring events) built from `history/events.jsonl`, an append-only,
-  *tracked* log that accumulates one record per flagged event each run
+- `reports/report-YYYY-MM-DD.html` — a **single scrollable visual report**
+  (self-contained, no dependencies): summary cards → a *"when the jumps
+  happened"* timeline across the full N-day window → a price **sparkline** for
+  every flagged market with the jump dotted in red → an *"activity over time"*
+  cross-day timeline at the bottom
+- `reports/timeline.html` — the same cross-day timeline as a standalone page,
+  built from `history/events.jsonl`: an append-only, *tracked* log that
+  accumulates one record per flagged event each run
 
 ```bash
 python -m predictionmonitor daily               # all enabled platforms
