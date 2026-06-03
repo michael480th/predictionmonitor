@@ -14,14 +14,44 @@ from datetime import date
 from typing import Any, Optional
 
 from predictionmonitor import history as history_mod
+from predictionmonitor.anomaly import DEFAULT_SIGNAL_THRESHOLDS, _SIGNAL_LABELS
 from predictionmonitor.schema import format_usd
 from predictionmonitor.viz import (
     TIER_COLORS,
     _parse_iso,
     escape,
     event_timeline,
-    sparkline,
+    price_volume_chart,
 )
+
+# Plain-language explanation of each signal — what the unusual pattern is and why
+# it can be a sign of insider/informed trading. Kept beside the detector so the
+# report's explainer stays in sync with what we actually compute.
+_SIGNAL_WHY = {
+    "price_jump": "The market's odds lurched in a single step — far more than its "
+    "normal jitter. A classic footprint of someone trading on news before it's "
+    "public.",
+    "abs_move": "The odds travelled a long way across the window in one direction "
+    "— sustained conviction, not random noise.",
+    "volume_spike": "Trading suddenly ran far hotter than this market's usual pace "
+    "— money showing up in a burst, often around a catalyst.",
+    "wallet_concentration": "A single wallet drove an outsized share of the volume "
+    "— one concentrated, confident bet rather than a crowd.",
+}
+
+
+def _threshold_text(thresholds: dict[str, Any]) -> dict[str, str]:
+    """Human phrasing of each signal's firing threshold (from the live config)."""
+    t = {**DEFAULT_SIGNAL_THRESHOLDS, **(thresholds or {})}
+    return {
+        "price_jump": f"Fires on a ≥{t['price_jump_abs']:.2f} ({t['price_jump_abs'] * 100:.0f}-point) "
+        f"one-step move that is also ≥{t['price_jump_z']:.0f}σ of normal.",
+        "abs_move": f"Fires on a ≥{t['abs_move']:.2f} ({t['abs_move'] * 100:.0f}-point) net move "
+        "over the window.",
+        "volume_spike": f"Fires when peak volume is ≥{t['volume_spike']:.0f}× the median period.",
+        "wallet_concentration": f"Fires when one wallet holds ≥{t['wallet_concentration'] * 100:.0f}% "
+        "of the traded volume.",
+    }
 
 _CSS = """
 :root { --high:#c0392b; --medium:#e08e0b; --ink:#2c3e50; --muted:#7f8c8d; }
@@ -56,6 +86,22 @@ table.mk td.sc { width:48px; text-align:right; font-variant-numeric:tabular-nums
 .trades ul { margin:4px 0 0; padding-left:18px; }
 .trades li { margin:2px 0; }
 .trades .tx { font-weight:600; }
+table.ov { width:100%; border-collapse:collapse; font-size:13px; }
+table.ov th { color:var(--muted); font-weight:600; font-size:11px; letter-spacing:.03em;
+              text-transform:uppercase; text-align:left; padding:4px 8px; }
+table.ov td { padding:6px 8px; border-top:1px solid #f0f0f0; vertical-align:top; }
+table.ov td.amt { font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.why { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; }
+.why .w { flex:1; min-width:210px; background:#fbfcfd; border:1px solid #eef0f2;
+          border-radius:8px; padding:10px 12px; }
+.why .w h4 { margin:0 0 4px; font-size:13px; }
+.why .w p { margin:0 0 6px; font-size:12.5px; color:#4b5b6b; }
+.why .w .thr { font-size:11.5px; color:var(--muted); }
+.mkt { border-top:1px solid #f3f3f3; padding:10px 0 4px; }
+.mkt:first-of-type { border-top:0; }
+.mkt .hd { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+.mkt .hd .sc { font-variant-numeric:tabular-nums; font-weight:600; color:var(--muted); }
+.chart { margin-top:6px; overflow-x:auto; }
 a { color:#1a5fb4; text-decoration:none; }
 a:hover { text-decoration:underline; }
 .legend { margin:6px 0 0; padding:0; list-style:none; columns:2; font-size:13px; }
@@ -74,21 +120,94 @@ def _points_index(activity_result: dict[str, Any]) -> dict[tuple, list[dict]]:
     }
 
 
-def _series_and_highlight(points: list[dict], signals: list[dict]):
-    """(price list, index of the detected jump) for a market's sparkline."""
-    values = [p.get("price") for p in points]
-    at = None
-    for s in signals:
+def _trades_index(activity_result: dict[str, Any]) -> dict[tuple, list[dict]]:
+    return {
+        (a.get("platform"), a.get("market_id")): a.get("trades") or []
+        for a in activity_result.get("activity", [])
+    }
+
+
+def _jump_at(signals: list[dict]) -> Optional[str]:
+    for s in signals or []:
         if s.get("name") == "price_jump":
-            at = (s.get("detail") or {}).get("at")
-            break
-    hi = None
-    if at is not None:
-        for i, p in enumerate(points):
-            if p.get("t") == at:
-                hi = i
-                break
-    return values, hi
+            return (s.get("detail") or {}).get("at")
+    return None
+
+
+def _overview_html(flagged: list[dict[str, Any]]) -> str:
+    """Top-of-page table of the biggest flagged trades, across all leads.
+
+    Each row links the trader to their activity, the outcome to the bet, and the
+    market to its detail section further down the page.
+    """
+    rows: list[tuple[dict, dict]] = []
+    for e in flagged:
+        for tr in e.get("flagged_trades", []):
+            if (tr.get("usd") or 0) > 0:
+                rows.append((tr, e))
+    rows.sort(key=lambda r: r[0].get("usd") or 0, reverse=True)
+    rows = rows[:12]
+    if not rows:
+        return ('<div class="section"><h2 style="margin-top:0;font-size:16px">'
+                "Trades we're flagging</h2><div class=\"meta\">No individual "
+                "trades crossed the size floor in this window.</div></div>")
+
+    body = [
+        '<div class="section"><h2 style="margin-top:0;font-size:16px">'
+        "Trades we're flagging</h2>"
+        '<div class="meta">Largest individual trades behind today\'s leads — '
+        "biggest first. Click a trader for their activity, an outcome for the "
+        "bet, or a lead to jump to its charts.</div>"
+        '<table class="ov"><tr><th>Size</th><th>Trade</th><th>Lead</th>'
+        "<th>When</th></tr>"
+    ]
+    for tr, e in rows:
+        amount = escape(format_usd(tr.get("usd")) or "—")
+        actor = escape(tr.get("actor_label") or "A wallet")
+        activity = tr.get("account_url")
+        name = f'<a href="{escape(activity)}">{actor}</a>' if activity else actor
+        action = escape(tr.get("action") or "traded")
+        outcome, market = tr.get("outcome"), tr.get("market_url")
+        if outcome and market:
+            oc = f' of <a href="{escape(market)}">{escape(outcome)}</a>'
+        elif outcome:
+            oc = f" of {escape(outcome)}"
+        else:
+            oc = ""
+        receipt = (f' · <a href="{escape(tr["tx_url"])}">receipt</a>'
+                   if tr.get("tx_url") else "")
+        lead = f'<a href="#lead-{e["_n"]}">{escape(e["event_title"])}</a>'
+        when = escape((tr.get("t") or "")[:10])
+        body.append(
+            f'<tr><td class="amt">{amount}</td>'
+            f'<td>{name} {action}{oc}{receipt}</td>'
+            f'<td>{lead}</td><td class="meta">{when}</td></tr>'
+        )
+    body.append("</table></div>")
+    return "".join(body)
+
+
+def _explainer_html(thresholds: dict[str, Any]) -> str:
+    """The 'what we're scanning for' section: each insider-trading sign, plainly."""
+    thr = _threshold_text(thresholds)
+    cards = ['<div class="why">']
+    for name, label in _SIGNAL_LABELS.items():
+        cards.append(
+            f'<div class="w"><h4>{escape(label)}</h4>'
+            f'<p>{escape(_SIGNAL_WHY.get(name, ""))}</p>'
+            f'<div class="thr">{escape(thr.get(name, ""))}</div></div>'
+        )
+    cards.append("</div>")
+    return (
+        '<div class="section"><h2 style="margin-top:0;font-size:16px">'
+        "What we're scanning for</h2>"
+        '<div class="meta">These are the patterns that, on a public market, can '
+        "hint at informed or insider trading. Each lead below lists which of "
+        "these fired and by how much — they are prompts to look closer, never "
+        "proof.</div>"
+        + "".join(cards)
+        + "</div>"
+    )
 
 
 def _tier_badge(tier: str) -> str:
@@ -160,6 +279,7 @@ def render_report(
 ) -> str:
     today = today or leads_result.get("generated_at") or date.today().isoformat()
     points_by_id = _points_index(activity_result)
+    trades_by_id = _trades_index(activity_result)
     window_days = leads_result.get("source_window_days") or activity_result.get(
         "window_days"
     )
@@ -217,6 +337,11 @@ def render_report(
         '<div class="cards">' + "".join(cards) + "</div>",
     ]
 
+    # Top: an at-a-glance table of the trades we're flagging, then a plain-language
+    # explainer of the insider-trading signs we scan for.
+    out.append(_overview_html(flagged))
+    out.append(_explainer_html(leads_result.get("signal_thresholds", {})))
+
     # Within-window timeline section.
     out.append('<div class="section"><h2 style="margin-top:0;font-size:16px">'
                f"When the jumps happened (last {n_days} days)</h2>")
@@ -246,30 +371,32 @@ def render_report(
             sib = (f' · {e["n_flagged"]}/{e["n_markets"]} markets'
                    if e["n_markets"] > 1 else "")
             out.append(
-                f'<div class="event"><h3>{_tier_badge(tier)}'
+                f'<div class="event" id="lead-{e["_n"]}"><h3>{_tier_badge(tier)}'
                 f'<span class="dot" style="background:{TIER_COLORS[tier]}">'
                 f'{e["_n"]}</span> '
                 f'<a href="{escape(e["url"])}">{escape(e["event_title"])}</a></h3>'
                 f'<div class="meta">lead {e["lead_score"]:.2f}{sib}</div>'
-                '<table class="mk">'
             )
             for m in e["members"]:
                 pts = points_by_id.get((e["platform"], m["market_id"]), [])
-                values, hi = _series_and_highlight(pts, m.get("signals", []))
-                spark = sparkline(values, highlight_index=hi)
+                trs = trades_by_id.get((e["platform"], m["market_id"]), [])
                 sig_txt = "; ".join(
                     f'{s["label"]} {s["value"]}'
                     + (f' ({s["detail"]["sigma"]}σ)'
                        if (s.get("detail") or {}).get("sigma") is not None else "")
                     for s in m.get("signals", [])
                 ) or "—"
-                out.append(
-                    f'<tr><td class="sc">{m["lead_score"]:.2f}</td>'
-                    f'<td class="spark">{spark}</td>'
-                    f'<td><a href="{escape(m["url"])}">{escape(m["title"])}</a>'
-                    f'<div class="sig">{escape_sig(sig_txt)}</div></td></tr>'
+                chart = price_volume_chart(
+                    pts, trs, start_ts=start_ts, end_ts=end_ts,
+                    highlight_at=_jump_at(m.get("signals", [])),
                 )
-            out.append("</table>")
+                out.append(
+                    f'<div class="mkt"><div class="hd">'
+                    f'<a href="{escape(m["url"])}">{escape(m["title"])}</a>'
+                    f'<span class="sc">{m["lead_score"]:.2f}</span></div>'
+                    f'<div class="sig">{escape_sig(sig_txt)}</div>'
+                    f'<div class="chart">{chart}</div></div>'
+                )
             out.append(_flagged_trades_html(e.get("flagged_trades", [])))
             out.append("</div>")
         out.append("</div>")

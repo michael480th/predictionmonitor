@@ -87,6 +87,139 @@ def sparkline(
     return "".join(parts)
 
 
+def price_volume_chart(
+    price_points: list[dict[str, Any]],
+    trades: list[dict[str, Any]],
+    *,
+    start_ts: Optional[float] = None,
+    end_ts: Optional[float] = None,
+    highlight_at: Optional[str] = None,
+    width: int = 820,
+    height: int = 190,
+) -> str:
+    """A full price-over-time line with daily $ volume bars underneath.
+
+    Price (implied probability) is drawn as a line on the left axis; trade volume
+    (summed USD per day, derived from the individual trades since Polymarket's
+    price feed carries no per-point volume) is drawn as bars on the right axis.
+    ``highlight_at`` (an ISO timestamp) marks the detected jump on the price line.
+    """
+    series = [
+        (_parse_iso(p.get("t")), p.get("price"))
+        for p in price_points
+        if _parse_iso(p.get("t")) is not None and p.get("price") is not None
+    ]
+    # Volume bars come from the trades; fall back to an empty band if absent.
+    vol_times = [
+        (_parse_iso(t.get("t")), (t.get("size") or 0) * (t.get("price") or 0))
+        for t in trades
+        if _parse_iso(t.get("t")) is not None
+    ]
+
+    if len(series) < 2 and not vol_times:
+        return (
+            f'<svg width="{width}" height="{height}" role="img" '
+            f'aria-label="no price/volume data"><text x="10" y="{height // 2}" '
+            'font-size="12" fill="#7f8c8d">No price/volume history collected.'
+            "</text></svg>"
+        )
+
+    all_ts = [t for t, _ in series] + [t for t, _ in vol_times]
+    lo = start_ts if start_ts is not None else min(all_ts)
+    hi = end_ts if end_ts is not None else max(all_ts)
+    if hi <= lo:
+        lo, hi = lo - 86400, hi + 86400
+    span = hi - lo
+
+    l_pad, r_pad, top, bot = 40, 40, 12, 24
+    plot_w = width - l_pad - r_pad
+    plot_h = height - top - bot
+    base_y = top + plot_h
+
+    def fx(t: float) -> float:
+        return _r(l_pad + (t - lo) / span * plot_w)
+
+    # Daily volume buckets across the window.
+    day = 86400
+    n_days = max(1, int(round(span / day)))
+    buckets = [0.0] * (n_days + 1)
+    for t, usd in vol_times:
+        idx = int((t - lo) / day)
+        if 0 <= idx <= n_days:
+            buckets[idx] += usd
+    max_vol = max(buckets) or 1.0
+    bar_w = max(2.0, plot_w / (n_days + 1) * 0.7)
+
+    parts = [
+        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+        f'role="img" aria-label="price and volume history">',
+        f'<line x1="{l_pad}" y1="{base_y}" x2="{width - r_pad}" y2="{base_y}" '
+        f'stroke="#bdc3c7"/>',
+    ]
+
+    # Volume bars (light, behind the price line), max ~55% of the plot height.
+    vol_band = plot_h * 0.55
+    for i, v in enumerate(buckets):
+        if v <= 0:
+            continue
+        bh = _r(v / max_vol * vol_band)
+        bx = fx(lo + (i + 0.5) * day) - bar_w / 2
+        parts.append(
+            f'<rect x="{_r(bx)}" y="{_r(base_y - bh)}" width="{_r(bar_w)}" '
+            f'height="{bh}" fill="#d6e0ea"/>'
+        )
+    parts.append(
+        f'<text x="{width - r_pad + 4}" y="{top + 8}" font-size="9" '
+        f'fill="#9aa7b2">${_fmt_money(max_vol)}/day</text>'
+    )
+
+    # Price line on the left axis (auto-scaled to keep small moves visible).
+    if len(series) >= 2:
+        ys = [v for _, v in series]
+        miny, maxy = min(ys), max(ys)
+        spany = (maxy - miny) or 1.0
+
+        def fy(v: float) -> float:
+            return _r(base_y - (v - miny) / spany * plot_h)
+
+        d = "M " + " L ".join(f"{fx(t)} {fy(v)}" for t, v in series)
+        parts.append(
+            f'<path d="{d}" fill="none" stroke="#2c3e50" stroke-width="1.6"/>'
+        )
+        for v, yy in ((maxy, top + 8), (miny, base_y)):
+            parts.append(
+                f'<text x="{l_pad - 4}" y="{_r(yy)}" font-size="9" fill="#7f8c8d" '
+                f'text-anchor="end">{int(round(v * 100))}%</text>'
+            )
+        hl = _parse_iso(highlight_at)
+        if hl is not None:
+            # Mark the price sample nearest the detected jump.
+            nearest = min(series, key=lambda tv: abs(tv[0] - hl))
+            parts.append(
+                f'<circle cx="{fx(nearest[0])}" cy="{fy(nearest[1])}" r="3.2" '
+                f'fill="#c0392b"/>'
+            )
+
+    # A few date ticks.
+    for k in range(5 + 1):
+        t = lo + span * k / 5
+        x = fx(t)
+        label = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%b %d")
+        parts.append(
+            f'<text x="{x}" y="{base_y + 14}" font-size="9" fill="#7f8c8d" '
+            f'text-anchor="middle">{label}</text>'
+        )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _fmt_money(v: float) -> str:
+    """Compact money label (e.g. 12.3k) for chart axes."""
+    if v >= 1000:
+        return f"{v / 1000:.1f}k"
+    return f"{v:.0f}"
+
+
 def event_timeline(
     events: list[dict[str, Any]],
     *,
