@@ -22,7 +22,7 @@ for Compliance to investigate**.
 | 0 | Project scaffold, config, FMCC taxonomy, normalized schema | ✅ done |
 | 1 | Catalog ingestion: Polymarket + Kalshi → normalized markets | ✅ done |
 | 2 | Relevance filtering (taxonomy scoring) → watchlist | ✅ done |
-| 3 | Activity collection (price/volume/trade/wallet time series) | ⬜ planned |
+| 3 | Activity collection (price/volume/trade/wallet time series) | ✅ done |
 | 4 | Anomaly detection + lead scoring | ⬜ planned |
 | 5 | Daily report + GitHub Actions cron | ⬜ planned |
 | 6 | Backtest / threshold tuning | ⬜ planned |
@@ -38,6 +38,12 @@ for Compliance to investigate**.
 `KALSHI_API_KEY_ID` / `KALSHI_API_PRIVATE_KEY` (see `.env.example`) and the
 adapter will sign requests.
 
+**Phase 3 activity** uses additional public endpoints: Polymarket price history
+via the [CLOB API](https://clob.polymarket.com) `/prices-history` and trades via
+the [Data API](https://data-api.polymarket.com) `/trades`; Kalshi price/volume
+via `/series/{series}/markets/{ticker}/candlesticks` and `/markets/trades`. Hosts
+are configurable per platform in `config/settings.yml`.
+
 ## Quick start
 
 ```bash
@@ -51,6 +57,11 @@ python -m predictionmonitor catalog --platform polymarket --max 200
 
 # Score the latest catalog against the FMCC taxonomy -> watchlist
 python -m predictionmonitor filter
+
+# Collect recent price/volume/trade/wallet activity for the watchlisted markets
+python -m predictionmonitor activity                 # watched markets, 14-day window
+python -m predictionmonitor activity --include-review # also borderline markets
+python -m predictionmonitor activity --window-days 30 --max-markets 5
 
 # Inspect output
 ls reports/
@@ -70,6 +81,28 @@ flagged for **review** at ≥ `review_threshold`, **excluded** if it hits an
 exclusion keyword, else **ignored**. Thresholds live in `config/settings.yml`.
 Scoring is intentionally simple and explainable — every decision carries the
 keywords that produced it.
+
+`activity` (Phase 3) takes the newest watchlist (and the catalog it came from,
+for platform identifiers) and pulls recent **public** activity for each watched
+market — a price/probability time series, traded volume, and individual trades —
+then writes:
+
+- `reports/activity-YYYY-MM-DD.json` — per-market `price_points`, `trades`,
+  `wallet_clusters`, and summary `stats` (last price, window change, max single
+  step, trade count, distinct wallets, top-wallet volume share)
+- `reports/activity-YYYY-MM-DD.md` — a reviewer-friendly summary table
+
+These metrics are the raw inputs Phase 4 will score for anomalies. Collection is
+resilient: if one feed fails for a market (e.g. an endpoint is unreachable), the
+error is recorded on that market and the rest still land. Window, resolution,
+and trade caps live under `activity:` in `config/settings.yml`.
+
+> **Wallets & privacy.** Polymarket trades carry an on-chain proxy-wallet
+> address (public, pseudonymous). Adapters immediately reduce each to an
+> **opaque, stable cluster key** (a salt-free SHA-256 prefix) so the same wallet
+> can be tracked across markets for pattern detection — **raw addresses never
+> land in any report and are never attributed to a person.** Kalshi is anonymous,
+> so its markets have price/volume/trade series but no wallet clusters.
 
 > **Network note.** The two API hosts must be reachable. In a sandbox with a
 > restricted egress allowlist they may be blocked; the scanner runs fully in
@@ -95,7 +128,8 @@ src/predictionmonitor/
   catalog.py           orchestrates ingestion; loads/saves catalog JSON
   relevance.py         Phase 2: taxonomy scoring -> watch/review/ignore
   watchlist.py         writes watchlist JSON + Markdown report
-  cli.py               `python -m predictionmonitor` (catalog | filter)
+  activity.py          Phase 3: collect activity for watched markets -> report
+  cli.py               `python -m predictionmonitor` (catalog | filter | activity)
 config/
   taxonomy.yml         FMCC relevance taxonomy (used in Phase 2)
   settings.yml         runtime settings

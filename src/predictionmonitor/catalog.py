@@ -46,6 +46,7 @@ def _build_adapter(platform: str, settings: dict[str, Any]):
         page_size=ing_cfg.get("page_size", 500),
         max_pages=ing_cfg.get("max_pages", 200),
         only_open=ing_cfg.get("only_open", True),
+        config=plat_cfg,
     )
 
 

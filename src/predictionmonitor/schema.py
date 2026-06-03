@@ -7,6 +7,7 @@ know which platform a market came from.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -58,6 +59,12 @@ class Market:
     open_time: Optional[str] = None    # ISO 8601
     close_time: Optional[str] = None   # ISO 8601
 
+    # Platform-specific identifiers downstream phases need but the normalized
+    # model doesn't otherwise model (e.g. Polymarket conditionId / CLOB token
+    # ids for price history, Kalshi series_ticker for candlesticks). Opaque to
+    # everything except the adapter that produced it.
+    platform_meta: dict[str, Any] = field(default_factory=dict)
+
     fetched_at: str = field(default_factory=_utcnow_iso)
 
     def to_dict(self) -> dict[str, Any]:
@@ -91,3 +98,65 @@ def parse_float(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def iso_from_unix(ts: Any) -> Optional[str]:
+    """Convert a unix timestamp (seconds) to an ISO 8601 UTC string, or None."""
+    val = parse_float(ts)
+    if val is None:
+        return None
+    return datetime.fromtimestamp(val, tz=timezone.utc).isoformat()
+
+
+def cluster_key(address: Any) -> str:
+    """Opaque, stable key for a public on-chain wallet address.
+
+    Per the project's guardrails, Polymarket wallet addresses (public,
+    pseudonymous) are used *only* as opaque cluster keys for pattern detection
+    and are **never** stored raw or attributed to a person. Hashing the
+    lowercased address gives a key that is stable across markets and days (so
+    Phase 4 can cluster the same wallet's activity) while the raw address never
+    lands in any stored report.
+    """
+    norm = str(address or "").strip().lower()
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
+
+
+# --------------------------------------------------------------------------
+# Phase 3: activity time series (price/volume/trade samples for one market).
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class PricePoint:
+    """One observation of a market's implied probability over time.
+
+    `price` is the implied probability in [0, 1]; `volume` is the traded
+    volume in the sampling period when the platform reports it (Kalshi
+    candlesticks do; Polymarket's price history does not), else None.
+    """
+
+    t: str                              # ISO 8601 UTC timestamp
+    price: Optional[float]
+    volume: Optional[float] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Trade:
+    """A single executed trade, normalized across platforms.
+
+    `wallet` is an *opaque cluster key* (see :func:`cluster_key`), never a raw
+    address, and is None for anonymous platforms (Kalshi).
+    """
+
+    t: str                              # ISO 8601 UTC timestamp
+    price: Optional[float]              # implied probability in [0, 1]
+    size: Optional[float]              # contracts/shares traded
+    side: Optional[str] = None         # normalized: "buy"|"sell"|"yes"|"no"
+    wallet: Optional[str] = None       # opaque cluster key, or None if anonymous
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)

@@ -20,6 +20,12 @@ from predictionmonitor.relevance import (
     relevance_thresholds,
 )
 from predictionmonitor.watchlist import write_watchlist
+from predictionmonitor.activity import (
+    latest_watchlist_path,
+    load_watchlist,
+    run_activity,
+    write_activity,
+)
 
 
 def _enabled_platforms(settings: dict) -> list[str]:
@@ -88,6 +94,57 @@ def _cmd_filter(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_activity(args: argparse.Namespace) -> int:
+    settings = load_settings(args.settings)
+    output_dir = settings.get("output", {}).get("dir", "reports")
+
+    watchlist_path = args.watchlist or latest_watchlist_path(output_dir)
+    if not watchlist_path:
+        print(
+            "No watchlist found. Run `predictionmonitor filter` first, "
+            "or pass --watchlist PATH.",
+            file=sys.stderr,
+        )
+        return 2
+
+    catalog_path = args.catalog or latest_catalog_path(output_dir)
+    if not catalog_path:
+        print(
+            "No catalog found (needed for market identifiers). Run "
+            "`predictionmonitor catalog` first, or pass --catalog PATH.",
+            file=sys.stderr,
+        )
+        return 2
+
+    watchlist = load_watchlist(watchlist_path)
+    catalog_markets = load_catalog_markets(catalog_path)
+
+    print(
+        f"Collecting activity for {watchlist_path} "
+        f"(identifiers via {catalog_path})",
+        file=sys.stderr,
+    )
+    result = run_activity(
+        watchlist,
+        catalog_markets,
+        settings,
+        window_days=args.window_days,
+        include_review=args.include_review,
+        max_markets=args.max_markets,
+        platform=args.platform,
+    )
+    json_path, md_path = write_activity(result, output_dir=output_dir)
+
+    counts = result["counts"]
+    print(
+        f"\nCollected activity for {counts['markets']} markets "
+        f"({counts['with_errors']} with partial errors, "
+        f"{counts['missing']} not found in catalog)"
+    )
+    print(f"Wrote {json_path}\n      {md_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="predictionmonitor",
@@ -131,6 +188,45 @@ def build_parser() -> argparse.ArgumentParser:
         "--settings", default="config/settings.yml", help="path to settings.yml"
     )
     filt.set_defaults(func=_cmd_filter)
+
+    act = sub.add_parser(
+        "activity",
+        help="collect price/volume/trade/wallet activity for watchlisted markets",
+    )
+    act.add_argument(
+        "--watchlist",
+        help="watchlist JSON to read (default: newest in the reports dir)",
+    )
+    act.add_argument(
+        "--catalog",
+        help="catalog JSON for market identifiers (default: newest)",
+    )
+    act.add_argument(
+        "--window-days",
+        type=int,
+        default=None,
+        help="days of history to pull (default: settings activity.window_days)",
+    )
+    act.add_argument(
+        "--include-review",
+        action="store_true",
+        help="also collect activity for 'review' (borderline) markets",
+    )
+    act.add_argument(
+        "--max-markets",
+        type=int,
+        default=None,
+        help="cap markets collected (smoke testing)",
+    )
+    act.add_argument(
+        "--platform",
+        choices=["polymarket", "kalshi"],
+        help="restrict to a single platform",
+    )
+    act.add_argument(
+        "--settings", default="config/settings.yml", help="path to settings.yml"
+    )
+    act.set_defaults(func=_cmd_activity)
     return parser
 
 

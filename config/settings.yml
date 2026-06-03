@@ -20,6 +20,9 @@ platforms:
   polymarket:
     enabled: true
     base_url: "https://gamma-api.polymarket.com"
+    # Phase 3 activity hosts (price history + trades live off the Gamma API).
+    clob_base_url: "https://clob.polymarket.com"
+    data_base_url: "https://data-api.polymarket.com"
   kalshi:
     enabled: true
     base_url: "https://api.elections.kalshi.com/trade-api/v2"
@@ -30,6 +33,16 @@ relevance:
   # Tune these as false-positive/negative rates become clear (Phase 6).
   watch_threshold: 2.0
   review_threshold: 1.0
+
+activity:
+  # Phase 3: how much recent activity to pull for each watchlisted market.
+  window_days: 14
+  # Price-history resolution in minutes (snapped to each API's allowed steps).
+  fidelity_minutes: 60
+  # Cap on trades scanned/stored per market (newest first).
+  max_trades: 2000
+  # Store individual trades in the JSON (wallet clusters are always stored).
+  store_trades: true
 
 output:
   dir: "reports"
