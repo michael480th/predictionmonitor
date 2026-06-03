@@ -47,8 +47,15 @@ def load_taxonomy(path: str = _DEFAULT_TAXONOMY_PATH) -> dict[str, Any]:
 
 @lru_cache(maxsize=4096)
 def _compile(keyword: str) -> re.Pattern:
-    """Word-boundary matcher for a keyword/phrase (cached)."""
-    return re.compile(r"\b" + re.escape(keyword.lower()) + r"\b")
+    """Word-boundary matcher for a keyword/phrase (cached).
+
+    Allows a regular plural suffix on the trailing word so singular taxonomy
+    terms still match the plurals markets actually use ("rate cut" matches
+    "rate cuts", "interest rate" matches "interest rates", "home price" matches
+    "home prices", "housing crash" matches "housing crashes"). Without this,
+    Fed/housing markets scored too low and landed in "review" instead of "watch".
+    """
+    return re.compile(r"\b" + re.escape(keyword.lower()) + r"(?:e?s)?\b")
 
 
 def _matched_keywords(text: str, keywords: Iterable[str]) -> list[str]:
