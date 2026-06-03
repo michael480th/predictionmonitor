@@ -110,6 +110,10 @@ class LeadResult:
     signals: list[Signal] = field(default_factory=list)
     event_id: Optional[str] = None
     event_title: Optional[str] = None
+    # The biggest individual trades behind this lead, carrying tx/wallet links
+    # so a reviewer can open the actual outlier transaction (empty for anonymous
+    # platforms or when the trades feed was unavailable).
+    flagged_trades: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -124,6 +128,7 @@ class LeadResult:
             "lead_score": self.lead_score,
             "tier": self.tier,
             "signals": [s.to_dict() for s in self.signals],
+            "flagged_trades": self.flagged_trades,
         }
 
     @property
@@ -268,6 +273,7 @@ def score_activity(
         lead_score=lead_score,
         tier=_tier(lead_score, tiers),
         signals=signals,
+        flagged_trades=(stats.get("suspicious_trades") or []),
     )
 
 
@@ -305,6 +311,7 @@ def _group_events(leads: list[LeadResult]) -> list[dict[str, Any]]:
                 "n_flagged": len(flagged),
                 "headline_market": head.title,
                 "top_signals": [s.to_dict() for s in head.signals],
+                "flagged_trades": head.flagged_trades,
                 "members": [
                     {
                         "market_id": m.market_id,

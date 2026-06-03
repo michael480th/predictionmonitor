@@ -1,10 +1,13 @@
 name: Daily scan
 
 # Runs the full FMCC scan (catalog -> filter -> activity -> leads) on a daily
-# cron and on demand. Unlike the sandboxed dev environment, GitHub-hosted
-# runners have open network, so the Polymarket trades/wallet endpoints and
-# Kalshi activity are reachable here. Output is published as a job summary and
-# as downloadable artifacts (reports are gitignored, so nothing is committed).
+# cron and on demand. Output is delivered three ways:
+#   - the Markdown digest is committed to docs/ (renders on GitHub, linkable);
+#   - the visual HTML report + timeline are published to GitHub Pages (shareable
+#     link, renders the charts and clickable outlier-trade links);
+#   - the full report set is also uploaded as a downloadable artifact.
+# NOTE: GitHub Pages must be enabled once at Settings -> Pages -> Source:
+# "GitHub Actions" for the publish step to succeed.
 
 on:
   schedule:
@@ -26,7 +29,9 @@ on:
         default: false
 
 permissions:
-  contents: write          # to append history/events.jsonl on the default branch
+  contents: write          # commit history/events.jsonl + docs/ digest
+  pages: write             # publish the visual report to GitHub Pages
+  id-token: write          # required by actions/deploy-pages
 
 concurrency:
   group: daily-scan
@@ -74,22 +79,41 @@ jobs:
             echo "No digest produced — see the run log." >> "${GITHUB_STEP_SUMMARY}"
           fi
 
-      - name: Persist event history (timeline)
-        # Append-only history is tracked so the timeline accumulates across runs.
-        # Only commit on the default branch to keep feature branches clean.
-        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      - name: Stage published site + committed digest
+        if: always()
         run: |
-          if ! git diff --quiet -- history/events.jsonl; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add history/events.jsonl
-            git commit -m "chore(history): append daily leads [skip ci]"
-            git push
-          else
-            echo "No history change to commit."
+          RUN_DATE="$(date -u +%F)"
+          html="$(ls -t reports/report-*.html 2>/dev/null | head -1)"
+          md="$(ls -t reports/report-*.md 2>/dev/null | head -1)"
+          # GitHub Pages site: latest report as the landing page + dated archive.
+          mkdir -p site docs/reports
+          if [ -n "${html}" ]; then
+            cp "${html}" "site/index.html"
+            cp "${html}" "site/report-${RUN_DATE}.html"
+          fi
+          [ -f reports/timeline.html ] && cp reports/timeline.html site/timeline.html || true
+          # Committed Markdown digest: stable latest + dated archive (renders on GitHub).
+          if [ -n "${md}" ]; then
+            cp "${md}" "docs/latest-report.md"
+            cp "${md}" "docs/reports/report-${RUN_DATE}.md"
           fi
 
-      - name: Upload reports (incl. visual HTML + timeline)
+      - name: Commit history + digest (default branch)
+        # Append-only history + the rendered digest are tracked so they show up
+        # on GitHub. Only commit on the default branch to keep features clean.
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add history/events.jsonl docs/latest-report.md docs/reports/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "chore(reports): daily digest + timeline [skip ci]"
+            git push
+          fi
+
+      - name: Upload reports artifact (incl. visual HTML + timeline)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -100,3 +124,25 @@ jobs:
             reports/*.json
           if-no-files-found: warn
           retention-days: 90
+
+      - name: Upload GitHub Pages artifact
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # Publishes the visual report to GitHub Pages. Requires Pages to be enabled
+  # once (Settings -> Pages -> Source: "GitHub Actions"); until then this job
+  # fails softly without affecting the scan or its committed/uploaded output.
+  deploy-pages:
+    needs: scan
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -24,7 +24,7 @@ TIERS = {"high": 3.0, "medium": 1.5}
 def activity(
     *, prices=None, volumes=None, top_wallet_share=None, platform="polymarket",
     market_id="m1", title="A market", decision="watch", score=3.0,
-    event_id=None, event_title=None,
+    event_id=None, event_title=None, suspicious_trades=None,
 ):
     points = []
     prices = prices or []
@@ -36,6 +36,8 @@ def activity(
     stats = {}
     if top_wallet_share is not None:
         stats["top_wallet_share"] = top_wallet_share
+    if suspicious_trades is not None:
+        stats["suspicious_trades"] = suspicious_trades
     return {
         "platform": platform, "market_id": market_id, "title": title,
         "url": "https://example.test/x", "decision": decision, "score": score,
@@ -46,6 +48,27 @@ def activity(
 
 def score(a):
     return score_activity(a, weights=W, thresholds=T, tiers=TIERS)
+
+
+class FlaggedTradeTests(unittest.TestCase):
+    def test_flagged_trades_flow_into_lead_and_event(self):
+        from predictionmonitor.anomaly import _group_events
+
+        trade = {
+            "t": "2026-06-03T12:00:00+00:00", "size": 12000, "price": 0.42,
+            "side": "buy", "wallet_address": "0xWHALE", "tx_hash": "0xTX",
+            "tx_url": "https://polygonscan.com/tx/0xTX",
+            "account_url": "https://polymarket.com/profile/0xWHALE",
+        }
+        a = activity(
+            prices=[0.50, 0.505, 0.50, 0.505, 0.50, 0.85],
+            suspicious_trades=[trade],
+        )
+        r = score(a)
+        self.assertEqual(r.flagged_trades, [trade])
+        self.assertIn("flagged_trades", r.to_dict())
+        ev = _group_events([r])[0]
+        self.assertEqual(ev["flagged_trades"][0]["tx_url"], trade["tx_url"])
 
 
 class SignalTests(unittest.TestCase):

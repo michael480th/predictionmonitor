@@ -158,8 +158,11 @@ class PricePoint:
 class Trade:
     """A single executed trade, normalized across platforms.
 
-    `wallet` is an *opaque cluster key* (see :func:`cluster_key`), never a raw
-    address, and is None for anonymous platforms (Kalshi).
+    `wallet` is an *opaque cluster key* (see :func:`cluster_key`) used for
+    pattern detection. For platforms whose trades settle on a public chain
+    (Polymarket), we also keep the raw `wallet_address` and the on-chain
+    `tx_hash` so a flagged outlier can be opened and investigated directly.
+    Anonymous platforms (Kalshi) leave all wallet/tx fields None.
     """
 
     t: str                              # ISO 8601 UTC timestamp
@@ -167,6 +170,23 @@ class Trade:
     size: Optional[float]              # contracts/shares traded
     side: Optional[str] = None         # normalized: "buy"|"sell"|"yes"|"no"
     wallet: Optional[str] = None       # opaque cluster key, or None if anonymous
+    wallet_address: Optional[str] = None  # raw on-chain address, for investigation
+    tx_hash: Optional[str] = None      # settlement transaction hash, for investigation
+
+    @property
+    def tx_url(self) -> Optional[str]:
+        """Block-explorer link to the settlement transaction, if known."""
+        return f"https://polygonscan.com/tx/{self.tx_hash}" if self.tx_hash else None
+
+    @property
+    def account_url(self) -> Optional[str]:
+        """Polymarket profile for the trading wallet, if known."""
+        if not self.wallet_address:
+            return None
+        return f"https://polymarket.com/profile/{self.wallet_address}"
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["tx_url"] = self.tx_url
+        d["account_url"] = self.account_url
+        return d

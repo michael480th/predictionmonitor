@@ -51,6 +51,10 @@ table.mk td.spark { width:180px; }
 table.mk td.sc { width:48px; text-align:right; font-variant-numeric:tabular-nums;
                  font-weight:600; }
 .sig { color:var(--muted); font-size:12px; }
+.trades { margin:8px 0 2px; font-size:12.5px; }
+.trades ul { margin:4px 0 0; padding-left:18px; }
+.trades li { margin:2px 0; }
+.trades .tx { font-weight:600; }
 a { color:#1a5fb4; text-decoration:none; }
 a:hover { text-decoration:underline; }
 .legend { margin:6px 0 0; padding:0; list-style:none; columns:2; font-size:13px; }
@@ -94,6 +98,40 @@ def _tier_badge(tier: str) -> str:
 def _card(label: str, value: Any) -> str:
     return f'<div class="card"><div class="k">{escape(label)}</div>' \
            f'<div class="v">{value}</div></div>'
+
+
+def _fmt_num(x: Any) -> str:
+    """Compact number formatting (no scientific notation)."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return "?"
+    if abs(v) >= 1000:
+        return f"{v:,.0f}"
+    return str(int(v)) if v == int(v) else f"{v:.4g}"
+
+
+def _flagged_trades_html(trades: list[dict[str, Any]]) -> str:
+    """The outlier trades for an event, linking straight to the tx + wallet."""
+    if not trades:
+        return ""
+    items = []
+    for tr in trades[:5]:
+        side = escape((tr.get("side") or "").upper())
+        desc = f'{_fmt_num(tr.get("size"))} @ {_fmt_num(tr.get("price"))} {side}'.strip()
+        links = []
+        if tr.get("tx_url"):
+            links.append(f'<a class="tx" href="{escape(tr["tx_url"])}">tx</a>')
+        if tr.get("account_url"):
+            links.append(f'<a href="{escape(tr["account_url"])}">wallet</a>')
+        link_txt = " · ".join(links) or "—"
+        when = escape((tr.get("t") or "")[:16].replace("T", " "))
+        items.append(
+            f'<li>{desc} — {link_txt} <span class="meta">{when}</span></li>'
+        )
+    return ('<div class="trades"><b>Outlier trades</b> '
+            "(largest in window — open to investigate):"
+            f'<ul>{"".join(items)}</ul></div>')
 
 
 def render_report(
@@ -215,7 +253,9 @@ def render_report(
                     f'<td><a href="{escape(m["url"])}">{escape(m["title"])}</a>'
                     f'<div class="sig">{escape_sig(sig_txt)}</div></td></tr>'
                 )
-            out.append("</table></div>")
+            out.append("</table>")
+            out.append(_flagged_trades_html(e.get("flagged_trades", [])))
+            out.append("</div>")
         out.append("</div>")
 
     # Cross-day timeline (accumulates across scans) — same page, scroll down.
