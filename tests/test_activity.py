@@ -42,13 +42,23 @@ class PolymarketActivityTests(unittest.TestCase):
             meta={"condition_id": "0xabc", "clob_token_ids": ["111", "222"]},
         )
 
-    def test_price_history_parsed(self):
-        payload = {"history": [{"t": 1779321605, "p": 0.53}, {"t": 1779408005, "p": "0.61"}]}
+    def test_price_history_parsed_and_window_trimmed(self):
+        now = time.time()
+        payload = {"history": [
+            {"t": now - 3 * 86400, "p": 0.53},      # inside window
+            {"t": now - 1 * 86400, "p": "0.61"},    # inside window (string price)
+            {"t": now - 99 * 86400, "p": 0.20},     # older than window -> trimmed
+        ]}
         with mock.patch.object(polymarket, "get_json", return_value=payload):
             points = self.adapter.fetch_price_history(self.market, window_days=14)
-        self.assertEqual(len(points), 2)
+        self.assertEqual(len(points), 2)            # stale point trimmed client-side
         self.assertAlmostEqual(points[1].price, 0.61)
         self.assertTrue(points[0].t.endswith("+00:00"))  # ISO UTC
+
+    def test_interval_covers_window(self):
+        self.assertEqual(self.adapter._interval_for_window(1), "1d")
+        self.assertEqual(self.adapter._interval_for_window(14), "1m")
+        self.assertEqual(self.adapter._interval_for_window(90), "max")
 
     def test_price_history_requires_token_ids(self):
         bare = mk("polymarket", "2", meta={"condition_id": "0x"})

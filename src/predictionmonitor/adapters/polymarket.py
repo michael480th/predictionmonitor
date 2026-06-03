@@ -27,8 +27,10 @@ from predictionmonitor.schema import (
 
 log = logging.getLogger(__name__)
 
-# Gamma caps page size around 500.
-_MAX_PAGE = 500
+# Gamma hard-caps each `/markets` response at 100 rows regardless of the `limit`
+# we send, so we page in 100s via `offset`. (Sending a larger limit would make
+# the "short page" stop condition fire after the very first page.)
+_MAX_PAGE = 100
 
 # Activity lives on different hosts than the Gamma catalog API.
 _DEFAULT_CLOB_URL = "https://clob.polymarket.com"
@@ -157,6 +159,22 @@ class PolymarketAdapter(Adapter):
     # ------------------------------------------------------------------
     # Phase 3 activity collection
     # ------------------------------------------------------------------
+    @staticmethod
+    def _interval_for_window(window_days: int) -> str:
+        """Smallest named CLOB interval that covers `window_days`.
+
+        The endpoint rejects explicit startTs/endTs ranges beyond ~3 weeks
+        (silently returning an empty history), so we request a covering named
+        interval — which has no such cap — and trim to the window client-side.
+        """
+        if window_days <= 1:
+            return "1d"
+        if window_days <= 7:
+            return "1w"
+        if window_days <= 31:
+            return "1m"
+        return "max"
+
     def fetch_price_history(
         self, market: Market, *, window_days: int = 14, fidelity_minutes: int = 60
     ) -> list[PricePoint]:
@@ -171,15 +189,13 @@ class PolymarketAdapter(Adapter):
             raise ValueError("market has no clob_token_ids; cannot fetch price history")
 
         clob_url = self.config.get("clob_base_url", _DEFAULT_CLOB_URL).rstrip("/")
-        end_ts = int(time.time())
-        start_ts = end_ts - window_days * 86400
+        cutoff = time.time() - window_days * 86400
         data = get_json(
             self.session,
             f"{clob_url}/prices-history",
             params={
                 "market": token_ids[0],
-                "startTs": start_ts,
-                "endTs": end_ts,
+                "interval": self._interval_for_window(window_days),
                 "fidelity": fidelity_minutes,
             },
             timeout=self.timeout,
@@ -187,10 +203,10 @@ class PolymarketAdapter(Adapter):
         history = data.get("history") if isinstance(data, dict) else data
         points: list[PricePoint] = []
         for h in history or []:
-            ts = iso_from_unix(h.get("t"))
-            if ts is None:
+            ts = parse_float(h.get("t"))
+            if ts is None or ts < cutoff:
                 continue
-            points.append(PricePoint(t=ts, price=parse_float(h.get("p"))))
+            points.append(PricePoint(t=iso_from_unix(ts), price=parse_float(h.get("p"))))
         return points
 
     def fetch_trades(
