@@ -1,0 +1,49 @@
+[
+  {
+    "id": "512724",
+    "question": "Will the Fed cut rates in June 2026?",
+    "slug": "fed-rate-cut-june-2026",
+    "description": "Resolves YES if the FOMC lowers the target range at its June 2026 meeting.",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.34\", \"0.66\"]",
+    "volumeNum": 1284567.12,
+    "liquidityNum": 90345.5,
+    "startDate": "2026-01-02T00:00:00Z",
+    "endDate": "2026-06-18T00:00:00Z",
+    "closed": false,
+    "active": true,
+    "events": [
+      {"id": "evt-900", "title": "Fed decision June 2026", "slug": "fed-june-2026"}
+    ],
+    "tags": [{"label": "Economy"}, {"label": "Fed"}]
+  },
+  {
+    "id": "600001",
+    "question": "Will Fannie Mae exit conservatorship in 2026?",
+    "slug": "fannie-exit-conservatorship-2026",
+    "description": "Resolves YES if FHFA formally ends the conservatorship.",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.18\", \"0.82\"]",
+    "volume": "44210",
+    "liquidity": "12000",
+    "endDate": "2026-12-31T00:00:00Z",
+    "closed": false,
+    "active": true,
+    "events": [{"id": "evt-901", "title": "GSE reform", "slug": "gse-reform-2026"}]
+  },
+  {
+    "id": "700002",
+    "question": "Closed market should still parse",
+    "slug": "closed-one",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"1.0\", \"0.0\"]",
+    "closed": true,
+    "active": false,
+    "endDate": "2026-01-01T00:00:00Z",
+    "events": []
+  },
+  {
+    "id": null,
+    "question": "Malformed row without id is skipped"
+  }
+]

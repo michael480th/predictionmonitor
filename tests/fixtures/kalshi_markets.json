@@ -1,0 +1,40 @@
+{
+  "markets": [
+    {
+      "ticker": "FEDDECISION-26JUN-C",
+      "event_ticker": "FEDDECISION-26JUN",
+      "title": "Fed funds rate cut in June 2026",
+      "subtitle": "25+ bps cut",
+      "category": "Economics",
+      "last_price": 31,
+      "yes_bid": 30,
+      "yes_ask": 33,
+      "no_bid": 67,
+      "no_ask": 70,
+      "volume": 50211,
+      "open_interest": 12044,
+      "liquidity": 8800,
+      "open_time": "2026-01-05T14:00:00Z",
+      "close_time": "2026-06-18T14:00:00Z",
+      "status": "active"
+    },
+    {
+      "ticker": "MORTGAGE30-26H1",
+      "event_ticker": "MORTGAGE30",
+      "title": "30-year mortgage rate above 6.5% mid-2026",
+      "category": "Economics",
+      "yes_bid": 48,
+      "yes_ask": 52,
+      "volume": 9100,
+      "open_interest": 3000,
+      "open_time": "2026-02-01T14:00:00Z",
+      "close_time": "2026-07-01T14:00:00Z",
+      "status": "open"
+    },
+    {
+      "ticker": null,
+      "title": "no ticker -> skipped"
+    }
+  ],
+  "cursor": ""
+}

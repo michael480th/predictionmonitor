@@ -1,0 +1,28 @@
+# Runtime settings for the catalog ingestion (Phase 1).
+
+http:
+  timeout_seconds: 30
+  max_retries: 4
+  backoff_factor: 1.0          # exponential backoff between retries
+  user_agent: "predictionmonitor/0.1 (+https://github.com/michael480th/predictionmonitor)"
+
+ingestion:
+  # Only pull markets that are currently tradable.
+  only_open: true
+  # Per-request page size (capped to each API's max internally).
+  page_size: 500
+  # Safety cap on total pages per platform to avoid runaway loops.
+  max_pages: 200
+  # Optional hard cap on markets per platform (None = no cap). CLI --max wins.
+  max_markets: null
+
+platforms:
+  polymarket:
+    enabled: true
+    base_url: "https://gamma-api.polymarket.com"
+  kalshi:
+    enabled: true
+    base_url: "https://api.elections.kalshi.com/trade-api/v2"
+
+output:
+  dir: "reports"

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets / local config
+.env
+
+# Generated catalog/report data (keep the dir, ignore large dumps)
+reports/*.json
+!reports/.gitkeep
+
+# Local DB (later phases)
+*.sqlite
+*.db

@@ -1,0 +1,95 @@
+# FMCC relevance taxonomy.
+#
+# Defines what makes a prediction market "in scope" for Freddie Mac monitoring.
+# Phase 1 only stores this; Phase 2 will score each catalogued market against
+# these buckets (keyword/entity match + optional semantic similarity) to build
+# the watchlist. Keep terms lowercase; matching is case-insensitive.
+#
+# `weight` lets some buckets count more toward the relevance score.
+# A market that matches multiple buckets is more likely to be FMCC-relevant.
+
+version: 1
+
+buckets:
+  rates_and_fed:
+    label: "Rates & Fed"
+    weight: 1.0
+    description: >
+      Monetary policy and rate levels that directly move FMCC's business and
+      the value of agency MBS.
+    keywords:
+      - fed
+      - federal reserve
+      - fomc
+      - interest rate
+      - rate cut
+      - rate hike
+      - rate decision
+      - basis points
+      - mortgage rate
+      - 30-year mortgage
+      - treasury yield
+      - inflation
+      - cpi
+      - pce
+      - jerome powell
+      - powell
+
+  housing_and_gse:
+    label: "Housing & GSE reform"
+    weight: 1.5   # most FMCC-specific category
+    description: >
+      Housing market conditions and the policy/structure of the GSEs.
+    keywords:
+      - freddie mac
+      - fannie mae
+      - gse
+      - conservatorship
+      - privatize fannie
+      - privatize freddie
+      - release fannie
+      - release freddie
+      - gse reform
+      - fhfa
+      - federal housing finance agency
+      - housing market
+      - home prices
+      - case-shiller
+      - housing crash
+      - mortgage backed
+      - mbs
+      - housing starts
+
+  fmcc_corporate:
+    label: "FMCC corporate events"
+    weight: 2.0   # anything naming Freddie Mac itself is high signal
+    description: >
+      Events tied directly to Freddie Mac / Fannie Mae as entities.
+    keywords:
+      - freddie mac
+      - fmcc
+      - fnma
+      - fmcc stock
+      - fannie mae stock
+      - gse ipo
+      - gse relisting
+
+# Categories on the platforms that are worth pulling even before keyword match
+# (used as a coarse pre-filter hint in Phase 2).
+platform_category_hints:
+  polymarket:
+    - economy
+    - economics
+    - financials
+    - fed
+  kalshi:
+    - economics
+    - financials
+    - climate-and-weather  # excluded example; tune later
+
+# Hard scope exclusions (never flag), to cut obvious noise.
+exclude_keywords:
+  - sports
+  - nba
+  - nfl
+  - super bowl
