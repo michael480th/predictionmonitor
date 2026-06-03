@@ -300,6 +300,7 @@ class PolymarketAdapter(Adapter):
                         wallet_address=str(wallet) if wallet else None,
                         tx_hash=str(tx_hash) if tx_hash else None,
                         pseudonym=(r.get("pseudonym") or r.get("name") or None),
+                        market_slug=(r.get("eventSlug") or r.get("slug") or None),
                     )
                 )
                 if len(out) >= max_trades:
