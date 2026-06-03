@@ -57,11 +57,12 @@ jobs:
           MAX_MARKETS: ${{ github.event.inputs.max_markets || '' }}
           INCLUDE_REVIEW: ${{ github.event.inputs.include_review || 'false' }}
         run: |
-          ARGS="-v --window-days ${WINDOW_DAYS}"
+          # NB: -v is a global flag, so it must precede the `daily` subcommand.
+          ARGS="--window-days ${WINDOW_DAYS}"
           if [ -n "${MAX_MARKETS}" ]; then ARGS="${ARGS} --max ${MAX_MARKETS}"; fi
           if [ "${INCLUDE_REVIEW}" = "true" ]; then ARGS="${ARGS} --include-review"; fi
-          echo "predictionmonitor daily ${ARGS}"
-          predictionmonitor daily ${ARGS}
+          echo "predictionmonitor -v daily ${ARGS}"
+          predictionmonitor -v daily ${ARGS}
 
       - name: Publish digest to job summary
         if: always()
