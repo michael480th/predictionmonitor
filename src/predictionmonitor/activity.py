@@ -112,6 +112,8 @@ def _compute_stats(
     price_points: list[PricePoint],
     trades: list[Trade],
     clusters: list[WalletCluster],
+    *,
+    min_trade_usd: float = 100.0,
 ) -> dict[str, Any]:
     """Explainable summary metrics — precursors for Phase 4 anomaly scoring."""
     stats: dict[str, Any] = {
@@ -134,7 +136,7 @@ def _compute_stats(
 
     if trades:
         stats["trade_volume"] = round(sum((t.size or 0.0) for t in trades), 4)
-        stats["suspicious_trades"] = _suspicious_trades(trades)
+        stats["suspicious_trades"] = _suspicious_trades(trades, min_usd=min_trade_usd)
 
     if clusters:
         total = sum(c.volume for c in clusters)
@@ -145,15 +147,20 @@ def _compute_stats(
     return stats
 
 
-def _suspicious_trades(trades: list[Trade], limit: int = 5) -> list[dict[str, Any]]:
-    """The biggest trades in the window — the outliers worth opening directly.
+def _suspicious_trades(
+    trades: list[Trade], *, min_usd: float = 100.0, limit: int = 5
+) -> list[dict[str, Any]]:
+    """The biggest *dollar-value* trades in the window worth opening directly.
 
-    Returned newest-investigation-first as serialized dicts carrying the raw
-    wallet + tx links (where the platform exposes them), so the report can link
-    straight to the on-chain transaction instead of the market's generic page.
+    Ranked by USD notional (size × price) and floored at ``min_usd`` so the
+    report surfaces real money, not the long tail of tiny trades. Trades whose
+    value can't be computed (missing price/size) are skipped. Returned as
+    serialized dicts carrying the wallet + tx links (where the platform exposes
+    them) so the report can link straight to the trader's positions.
     """
-    ranked = sorted(trades, key=lambda t: (t.size or 0.0), reverse=True)[:limit]
-    return [t.to_dict() for t in ranked if (t.size or 0.0) > 0]
+    valued = [t for t in trades if t.usd is not None and t.usd >= min_usd]
+    ranked = sorted(valued, key=lambda t: t.usd, reverse=True)[:limit]
+    return [t.to_dict() for t in ranked]
 
 
 def collect_market_activity(
@@ -166,6 +173,7 @@ def collect_market_activity(
     fidelity_minutes: int,
     max_trades: int,
     store_trades: bool,
+    min_trade_usd: float = 100.0,
 ) -> MarketActivity:
     """Collect price history + trades for one market, isolating sub-failures."""
     errors: list[str] = []
@@ -195,7 +203,7 @@ def collect_market_activity(
         errors.append(f"trades: {type(exc).__name__}: {exc}")
 
     clusters = _wallet_clusters(trades)
-    stats = _compute_stats(price_points, trades, clusters)
+    stats = _compute_stats(price_points, trades, clusters, min_trade_usd=min_trade_usd)
 
     return MarketActivity(
         platform=market.platform,
@@ -269,6 +277,7 @@ def run_activity(
     fidelity_minutes = acfg.get("fidelity_minutes", 60)
     max_trades = acfg.get("max_trades", 2000)
     store_trades = acfg.get("store_trades", True)
+    min_trade_usd = float(acfg.get("min_trade_usd", 100))
 
     selected, missing = _select_markets(
         watchlist, catalog_markets, include_review=include_review, platform=platform
@@ -296,6 +305,7 @@ def run_activity(
                     fidelity_minutes=fidelity_minutes,
                     max_trades=max_trades,
                     store_trades=store_trades,
+                    min_trade_usd=min_trade_usd,
                 )
             )
         except Exception as exc:  # adapter construction / unexpected failure

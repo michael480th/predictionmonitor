@@ -46,6 +46,9 @@ activity:
   max_trades: 2000
   # Store individual trades in the JSON (wallet clusters are always stored).
   store_trades: true
+  # Floor (USD notional = size x price) for a trade to surface as an outlier in
+  # the report. Trades below this are noise and are skipped.
+  min_trade_usd: 100
 
 anomaly:
   # Phase 4: turn collected activity into investigation leads. A market's

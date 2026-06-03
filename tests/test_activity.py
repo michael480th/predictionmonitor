@@ -200,6 +200,19 @@ class AggregationTests(unittest.TestCase):
         self.assertAlmostEqual(stats["series_volume"], 150.0)
         self.assertAlmostEqual(stats["top_wallet_share"], 1.0)
 
+    def test_suspicious_trades_floor_and_ranking(self):
+        from predictionmonitor.activity import _suspicious_trades
+
+        trades = [
+            Trade(t="t", price=0.50, size=400, wallet=None),   # $200
+            Trade(t="t", price=0.20, size=100, wallet=None),   # $20  -> below floor
+            Trade(t="t", price=0.90, size=1000, wallet=None),  # $900
+            Trade(t="t", price=None, size=5000, wallet=None),  # unvalued -> skipped
+        ]
+        picked = _suspicious_trades(trades, min_usd=100.0)
+        # Only the two trades worth >= $100, biggest dollars first.
+        self.assertEqual([t["usd"] for t in picked], [900.0, 200.0])
+
 
 class FakeAdapter:
     """Stand-in adapter so run_activity needs no network."""
