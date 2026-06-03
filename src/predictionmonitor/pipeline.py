@@ -24,7 +24,7 @@ from predictionmonitor.relevance import (
     load_taxonomy,
     relevance_thresholds,
 )
-from predictionmonitor.schema import Market
+from predictionmonitor.schema import Market, format_usd
 from predictionmonitor.watchlist import write_watchlist
 
 log = logging.getLogger(__name__)
@@ -164,23 +164,26 @@ def _num(x: Any) -> str:
 
 
 def _flagged_trades_lines(trades: list[dict[str, Any]]) -> list[str]:
-    """Indented bullets for the outlier trades, linking to the actual tx/wallet."""
+    """Plain-English bullets for the biggest trades behind a lead.
+
+    Reads like "Brave-Honey bought $1,610 of Yes". The wallet name links to that
+    wallet's Polymarket profile (where its positions are visible); the on-chain
+    receipt is a small secondary link for anyone who wants the raw transaction.
+    """
     if not trades:
         return []
-    out = ["  - **Outlier trades** (largest in window — open to investigate):"]
+    out = ["  - **Largest trades** (click a name to see that wallet's positions):"]
     for tr in trades[:5]:
-        side = (tr.get("side") or "").upper()
-        desc = f"{_num(tr.get('size'))} @ {_num(tr.get('price'))}"
-        if side:
-            desc += f" {side}"
-        links = []
-        if tr.get("tx_url"):
-            links.append(f"[tx]({tr['tx_url']})")
-        if tr.get("account_url"):
-            links.append(f"[wallet]({tr['account_url']})")
-        suffix = f" — {' · '.join(links)}" if links else ""
+        actor = tr.get("actor_label") or "A wallet"
+        action = tr.get("action") or "traded"
+        amount = format_usd(tr.get("usd")) or f"{_num(tr.get('size'))} shares"
+        outcome = tr.get("outcome")
+        of = f" of {outcome}" if outcome else ""
+        profile = tr.get("account_url")
+        name = f"[{actor}]({profile})" if profile else actor
         when = (tr.get("t") or "")[:16].replace("T", " ")
-        out.append(f"    - {desc}{suffix}  `{when}`")
+        receipt = f" · [receipt]({tr['tx_url']})" if tr.get("tx_url") else ""
+        out.append(f"    - {name} {action} **{amount}**{of}  `{when}`{receipt}")
     return out
 
 

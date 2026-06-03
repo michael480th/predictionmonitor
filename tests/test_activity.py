@@ -69,7 +69,8 @@ class PolymarketActivityTests(unittest.TestCase):
         now = time.time()
         rows = [
             {"proxyWallet": "0xWALLET", "transactionHash": "0xTX1", "side": "BUY",
-             "size": 10, "price": 0.5, "timestamp": now - 100},
+             "size": 10, "price": 0.5, "timestamp": now - 100,
+             "outcome": "Yes", "pseudonym": "Brave-Honey"},
             {"proxyWallet": "0xWALLET", "transactionHash": "0xTX2", "side": "SELL",
              "size": 4, "price": 0.5, "timestamp": now - 200},
             # older than the window -> collection should stop here
@@ -90,6 +91,15 @@ class PolymarketActivityTests(unittest.TestCase):
             trades[0].account_url, "https://polymarket.com/profile/0xWALLET"
         )
         self.assertEqual(trades[0].side, "buy")
+        # Plain-English context for the report: which side of the bet, a friendly
+        # handle for the wallet, a verb, and a USD notional (size × price).
+        self.assertEqual(trades[0].outcome, "Yes")
+        self.assertEqual(trades[0].pseudonym, "Brave-Honey")
+        self.assertEqual(trades[0].actor_label, "Brave-Honey")
+        self.assertEqual(trades[0].action, "bought")
+        self.assertEqual(trades[0].usd, 5.0)
+        # A wallet with no handle falls back to its address.
+        self.assertEqual(trades[1].actor_label, "0xWALLET")
 
     def test_trades_max_cap(self):
         now = time.time()
@@ -189,6 +199,19 @@ class AggregationTests(unittest.TestCase):
         self.assertAlmostEqual(stats["max_step"], 0.25)       # 0.30 -> 0.55
         self.assertAlmostEqual(stats["series_volume"], 150.0)
         self.assertAlmostEqual(stats["top_wallet_share"], 1.0)
+
+    def test_suspicious_trades_floor_and_ranking(self):
+        from predictionmonitor.activity import _suspicious_trades
+
+        trades = [
+            Trade(t="t", price=0.50, size=400, wallet=None),   # $200
+            Trade(t="t", price=0.20, size=100, wallet=None),   # $20  -> below floor
+            Trade(t="t", price=0.90, size=1000, wallet=None),  # $900
+            Trade(t="t", price=None, size=5000, wallet=None),  # unvalued -> skipped
+        ]
+        picked = _suspicious_trades(trades, min_usd=100.0)
+        # Only the two trades worth >= $100, biggest dollars first.
+        self.assertEqual([t["usd"] for t in picked], [900.0, 200.0])
 
 
 class FakeAdapter:

@@ -295,9 +295,11 @@ class PolymarketAdapter(Adapter):
                         price=parse_float(r.get("price")),
                         size=parse_float(r.get("size")),
                         side=(r.get("side") or "").lower() or None,
+                        outcome=(r.get("outcome") or None),
                         wallet=cluster_key(wallet) if wallet else None,
                         wallet_address=str(wallet) if wallet else None,
                         tx_hash=str(tx_hash) if tx_hash else None,
+                        pseudonym=(r.get("pseudonym") or r.get("name") or None),
                     )
                 )
                 if len(out) >= max_trades:
