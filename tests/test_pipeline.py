@@ -63,7 +63,8 @@ class RunDailyTests(unittest.TestCase):
              mock.patch.object(pipeline, "run_activity", return_value=self.fake_activity), \
              tempfile.TemporaryDirectory() as d:
             summary = pipeline.run_daily(
-                {}, output_dir=d, taxonomy_path=TAXONOMY_PATH
+                {}, output_dir=d, taxonomy_path=TAXONOMY_PATH,
+                history_path=os.path.join(d, "events.jsonl"),
             )
             arts = summary["artifacts"]
             for key in ("catalog", "watchlist_md", "activity_json", "leads_md", "digest"):
@@ -84,7 +85,10 @@ class RunDailyTests(unittest.TestCase):
         with mock.patch.object(pipeline, "run_catalog", return_value=self.fake_catalog), \
              mock.patch.object(pipeline, "run_activity", side_effect=fake_activity), \
              tempfile.TemporaryDirectory() as d:
-            pipeline.run_daily({}, output_dir=d, taxonomy_path=TAXONOMY_PATH)
+            pipeline.run_daily(
+                {}, output_dir=d, taxonomy_path=TAXONOMY_PATH,
+                history_path=os.path.join(d, "events.jsonl"),
+            )
 
         self.assertEqual(captured["n_markets"], 2)        # both catalog markets passed
         self.assertGreaterEqual(len(captured["watch"]), 1)  # Freddie Mac watched
