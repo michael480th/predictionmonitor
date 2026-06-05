@@ -26,6 +26,7 @@ for Compliance to investigate**.
 | 4 | Anomaly detection + lead scoring | ✅ done |
 | 5 | Daily report + GitHub Actions cron | ✅ done |
 | 6 | Backtest / threshold tuning | ✅ done |
+| 7 | Arbitrage / market-maker demotion (cut structural false positives) | ✅ done |
 
 ## Data sources (Phase 1)
 
@@ -136,6 +137,35 @@ Phase 2. Weights and thresholds live under `anomaly:` in `config/settings.yml`;
 markets lacking a feed (anonymous, or an unreachable endpoint) simply contribute
 fewer signals rather than failing. As always: a high score is a **lead to
 investigate, never a finding**.
+
+### Arbitrage / market-maker demotion (Phase 7)
+
+A large class of leads are *structurally* explainable, not insider activity:
+arbitrageurs and market-makers who **sweep every outcome of a partition at
+near-certain prices** (e.g. buying "No" on all market-cap buckets of an IPO
+event at ~99¢) or **hold both sides** of a market to lock a spread. That's a
+near-risk-free trade, not a directional bet by someone with information — yet it
+shows up as a big, concentrated, FMCC-relevant position and trips the
+wallet-based signals.
+
+`arb.py` recognizes that structure from the trade data Phase 3 already collects
+(opaque wallet cluster keys + outcome + price across an event's sibling markets)
+and is **surgical**:
+
+- it drops the `wallet_concentration` signal of a market whose dominant wallet
+  is an arb sweeper, then **re-scores and re-tiers** the lead — so a lead that
+  was *only* "one wallet dominated volume" by an arbitrageur falls out of the
+  report (a true demotion, shown transparently in an "Auto-demoted" section);
+- it **tags** the arb's trades `structural arb` in the flagged-trades list so a
+  reviewer isn't misled into reading them as a suspicious actor;
+- it leaves **independent price/volume signals untouched** — a genuine abrupt
+  price jump keeps its lead, because the arb's near-certain trades didn't cause
+  it. Auto-demotion only happens on high-precision structural evidence, never
+  merely because a wallet is active, so real directional leads stay intact.
+
+Tuning lives under `arb:` in `config/settings.yml` (`near_certain_price`,
+`min_sweep_markets`, `near_certain_share`), and the whole pass can be switched
+off with `arb.enabled: false`.
 
 > **Network note.** The two API hosts must be reachable. In a sandbox with a
 > restricted egress allowlist they may be blocked; the scanner runs fully in

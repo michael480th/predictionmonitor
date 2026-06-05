@@ -31,6 +31,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Optional
 
+from predictionmonitor.arb import (
+    annotate_events,
+    apply_arb_adjustments,
+    arb_config,
+)
+
 log = logging.getLogger(__name__)
 
 # Signal weights — how much each anomaly contributes to the lead score.
@@ -114,6 +120,11 @@ class LeadResult:
     # so a reviewer can open the actual outlier transaction (empty for anonymous
     # platforms or when the trades feed was unavailable).
     flagged_trades: list[dict[str, Any]] = field(default_factory=list)
+    # Set when Phase 7 dropped a structural (arb/market-maker) signal from this
+    # lead and re-scored it (see arb.py); `original_tier` records the tier before
+    # that adjustment so the report can show what was demoted.
+    arb_adjusted: bool = False
+    original_tier: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -129,6 +140,8 @@ class LeadResult:
             "tier": self.tier,
             "signals": [s.to_dict() for s in self.signals],
             "flagged_trades": self.flagged_trades,
+            "arb_adjusted": self.arb_adjusted,
+            "original_tier": self.original_tier,
         }
 
     @property
@@ -294,19 +307,27 @@ def _group_events(leads: list[LeadResult]) -> list[dict[str, Any]]:
             order.append(key)
         groups[key].append(r)
 
+    rank = {"low": 0, "medium": 1, "high": 2}
     events: list[dict[str, Any]] = []
     for key in order:
         members = sorted(groups[key], key=lambda r: r.lead_score, reverse=True)
         head = members[0]
         flagged = [m for m in members if m.tier != "low"]
+        # Best tier the event would have had before any arb adjustment, so the
+        # report can tell a true demotion from an event that merely contains arb.
+        pre_arb_tier = max(
+            (m.original_tier or m.tier for m in members), key=lambda t: rank[t]
+        )
         events.append(
             {
                 "platform": head.platform,
                 "event_id": head.event_id,
+                "market_id": head.market_id,   # for arb keying of single-market events
                 "event_title": head.event_title or head.title,
                 "url": head.url,
                 "lead_score": head.lead_score,
                 "tier": head.tier,
+                "pre_arb_tier": pre_arb_tier,
                 "n_markets": len(members),
                 "n_flagged": len(flagged),
                 "headline_market": head.title,
@@ -349,9 +370,23 @@ def run_leads(
         score_activity(a, weights=weights, thresholds=thresholds, tiers=tiers)
         for a in activity_result.get("activity", [])
     ]
+    for r in leads:  # remember the pre-arb tier so demotions are reportable
+        r.original_tier = r.tier
+
+    # Phase 7: demote the wallet/trade-based portion of leads that are really
+    # structural arbitrage / market-making (e.g. a wallet sweeping near-certain
+    # "No" across every bucket of a partition), re-scoring + re-tiering them.
+    acfg = arb_config(settings)
+    arb_by_event: dict = {}
+    if acfg.get("enabled", True):
+        arb_by_event = apply_arb_adjustments(
+            leads, activity_result, config=acfg, tiers=tiers, retier=_tier
+        )
+
     leads.sort(key=lambda r: r.lead_score, reverse=True)
 
     events = _group_events(leads)
+    n_arb_events = annotate_events(events, arb_by_event) if arb_by_event else 0
 
     counts = {"high": 0, "medium": 0, "low": 0}
     for r in leads:
@@ -366,6 +401,8 @@ def run_leads(
         "thresholds": thresholds,
         "weights": weights,
         "tiers": tiers,
+        "arb_config": acfg,
+        "n_arb_events": n_arb_events,
         "counts": counts,                # per market
         "event_counts": event_counts,    # per event (grouped)
         "events": events,
@@ -439,6 +476,32 @@ def _render_events(events: list[dict[str, Any]]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def _render_arb_section(events: list[dict[str, Any]]) -> str:
+    """List events whose leads were auto-demoted as structural arbitrage."""
+    demoted = [e for e in events if (e.get("arb") or {}).get("demoted")]
+    if not demoted:
+        return ""
+    lines = [
+        "\n## Auto-demoted: likely arbitrage / market-making\n",
+        "These events were flagged **only** by wallet/trade signals that turned "
+        "out to be a *structural* pattern — a wallet sweeping near-certain "
+        "outcomes across a partition, or holding both sides (near-risk-free arb, "
+        "not a directional bet). That signal was discounted, dropping them out "
+        "of the leads above. Shown for transparency; any independent price/volume "
+        "signal would have kept the lead.\n",
+    ]
+    for e in demoted:
+        title = (e["event_title"] or "").replace("|", "\\|")
+        actors = "; ".join(
+            f"**{w['label']}** — {w['reason']}" for w in e["arb"]["wallets"][:3]
+        )
+        lines.append(
+            f"- [{title}]({e['url']}) ({e['platform']}, "
+            f"_{e['pre_arb_tier']}_ → _{e['tier']}_): {actors}"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _render_markdown(today: str, result: dict[str, Any]) -> str:
     ec = result.get("event_counts", {})
     mc = result.get("counts", {})
@@ -463,4 +526,5 @@ def _render_markdown(today: str, result: dict[str, Any]) -> str:
         f"{_render_events(high)}\n"
         "## Medium-priority leads\n\n"
         f"{_render_events(medium)}"
+        f"{_render_arb_section(events)}"
     )

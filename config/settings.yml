@@ -70,5 +70,15 @@ anomaly:
     high: 3.0
     medium: 1.5
 
+arb:
+  # Phase 7: recognize structural arbitrage / market-making and demote the
+  # wallet/trade-based portion of those leads (a wallet sweeping near-certain
+  # outcomes across a partition, or holding both sides, is near-risk-free arb —
+  # not insider activity). Price/volume signals are left untouched.
+  enabled: true
+  near_certain_price: 0.90    # a buy at/above this price has ~no edge left
+  min_sweep_markets: 3        # distinct sibling markets a wallet must sweep
+  near_certain_share: 0.5     # ...with at least this share of its trades near-certain
+
 output:
   dir: "reports"

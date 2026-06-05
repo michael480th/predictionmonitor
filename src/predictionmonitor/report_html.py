@@ -86,6 +86,10 @@ table.mk td.sc { width:48px; text-align:right; font-variant-numeric:tabular-nums
 .trades ul { margin:4px 0 0; padding-left:18px; }
 .trades li { margin:2px 0; }
 .trades .tx { font-weight:600; }
+.arb { display:inline-block; background:#eef1f4; color:#5b6b7b; border:1px solid #dde2e7;
+       border-radius:5px; padding:0 6px; font-size:11px; font-weight:600; }
+.demoted li { margin:4px 0; font-size:12.5px; color:#4b5b6b; }
+.demoted .who { font-weight:600; color:var(--ink); }
 table.ov { width:100%; border-collapse:collapse; font-size:13px; }
 table.ov th { color:var(--muted); font-weight:600; font-size:11px; letter-spacing:.03em;
               text-transform:uppercase; text-align:left; padding:4px 8px; }
@@ -260,13 +264,51 @@ def _flagged_trades_html(trades: list[dict[str, Any]]) -> str:
         receipt = (f' · <a href="{escape(tr["tx_url"])}">receipt</a>'
                    if tr.get("tx_url") else "")
         when = escape((tr.get("t") or "")[:16].replace("T", " "))
+        # A trade the arb classifier flagged as structural (sweep/hedge) is
+        # labeled so a reviewer doesn't read it as a suspicious actor.
+        tag = ""
+        if tr.get("arb"):
+            note = escape(tr.get("arb_note") or "structural arbitrage")
+            tag = f' <span class="arb" title="{note}">structural arb</span>'
         items.append(
-            f'<li>{name} {action} <b>{amount}</b>{of} '
+            f'<li>{name} {action} <b>{amount}</b>{of}{tag} '
             f'<span class="meta">· {when}{receipt}</span></li>'
         )
     return ('<div class="trades"><b>Largest trades</b> '
             "(trader → activity, outcome → the bet):"
             f'<ul>{"".join(items)}</ul></div>')
+
+
+def _arb_demoted_html(events: list[dict[str, Any]]) -> str:
+    """Transparency block: events whose leads were auto-demoted as structural arb."""
+    demoted = [e for e in events if (e.get("arb") or {}).get("demoted")]
+    if not demoted:
+        return ""
+    rows = []
+    for e in demoted:
+        title = escape(e.get("event_title") or "")
+        actors = "; ".join(
+            f'<span class="who">{escape(w["label"])}</span> — {escape(w["reason"])}'
+            for w in e["arb"]["wallets"][:3]
+        )
+        rows.append(
+            f'<li><a href="{escape(e["url"])}">{title}</a> '
+            f'<span class="meta">({escape(e["platform"])} · '
+            f'{escape(e.get("pre_arb_tier", ""))} → {escape(e["tier"])})</span>'
+            f"<br>{actors}</li>"
+        )
+    return (
+        '<div class="section"><h2 style="margin-top:0;font-size:16px">'
+        "Auto-demoted: likely arbitrage / market-making</h2>"
+        '<div class="meta" style="margin-bottom:8px">These events were flagged '
+        "<em>only</em> by wallet/trade signals that turned out to be a "
+        "<em>structural</em> pattern — sweeping near-certain outcomes across a "
+        "partition, or holding both sides (near-risk-free arbitrage, not a "
+        "directional bet). That signal was discounted, dropping them out of the "
+        "leads above; any independent price/volume signal would have kept the "
+        "lead. Shown here for transparency.</div>"
+        f'<ul class="demoted">{"".join(rows)}</ul></div>'
+    )
 
 
 def render_report(
@@ -400,6 +442,9 @@ def render_report(
             out.append(_flagged_trades_html(e.get("flagged_trades", [])))
             out.append("</div>")
         out.append("</div>")
+
+    # Transparency: events whose leads were auto-demoted as structural arb.
+    out.append(_arb_demoted_html(events))
 
     # Cross-day timeline (accumulates across scans) — same page, scroll down.
     if history:
