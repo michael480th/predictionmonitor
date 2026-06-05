@@ -7,13 +7,13 @@
 | Stage | Result |
 |-------|--------|
 | Catalog | 110100 open markets (polymarket 10100, kalshi 100000) |
-| FMCC relevance | 9 watch · 8 review · 302 excluded |
+| FMCC relevance | 9 watch · 8 review · 340 excluded |
 | Activity | 9 markets, 30-day window |
 | Anomaly leads | **1 high** · 2 medium events |
 
 ## Top leads
 
-- **4.05 [high]** [Freddie Mac IPO Closing Market Cap](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap) · 2/6 markets  
+- **4.05 [high]** [Freddie Mac IPO Closing Market Cap](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap) · 3/6 markets  
   Will Freddie Mac’s market cap be $300B or greater at market close on IPO day? — Abrupt price jump 0.27 (≥0.1, 17.0σ)
   - **Largest trades** — trader → their activity, outcome → the bet:
     - [Grown-Fence](https://polymarket.com/profile/0x4f1d5ae26fc31472966e951af3183308736d8de2?tab=activity) bought **$358** of [No](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap)  `2026-06-04 16:07` · [receipt](https://polygonscan.com/tx/0x1329e3e665a6819d912eeccb01ae688d6ad5d31b71d26a5bc1af16853acaf9a4)
