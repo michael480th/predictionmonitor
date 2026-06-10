@@ -99,7 +99,9 @@ then writes:
 
 - `reports/activity-YYYY-MM-DD.json` — per-market `price_points`, `trades`,
   `wallet_clusters`, and summary `stats` (last price, window change, max single
-  step, trade count, distinct wallets, top-wallet volume share)
+  step, trade count, distinct wallets, top-wallet volume share, plus the
+  largest single-trade and per-wallet USD notionals that feed Phase 4's
+  absolute-money tripwires)
 - `reports/activity-YYYY-MM-DD.md` — a reviewer-friendly summary table
 
 These metrics are the raw inputs Phase 4 will score for anomalies. Collection is
@@ -126,6 +128,19 @@ extreme the anomaly is, capped so no single signal dominates. Signals:
 | `abs_move` | cumulative \|Δ probability\| over the window ≥ `abs_move` | the market re-priced materially |
 | `volume_spike` | peak period volume ÷ median ≥ `volume_spike` | needs per-period volume (Kalshi candlesticks) |
 | `wallet_concentration` | top wallet's share of trade volume ≥ `wallet_concentration` | Polymarket only (Kalshi is anonymous) |
+| `material_trade` | the largest single trade's USD notional ≥ `material_trade_usd` | **absolute-money tripwire** — a fixed dollar floor, not a σ test |
+| `material_wallet` | one wallet's total USD flow over the window ≥ `material_wallet_usd` | absolute-money tripwire; Polymarket only |
+
+The last two are **absolute-money tripwires**. The σ-based signals scale to each
+market's own noise, which on a thin market means a few hundred dollars can read
+as "many σ" while a genuinely large position barely moves the statistic. The
+tripwires invert that: they fire on a **fixed dollar floor**, so material capital
+entering an FMCC market is surfaced regardless of how unusual the relative math
+judges it (the largest trade ever observed on these markets is a few hundred
+dollars, so the `$2,000` default stands well clear of the baseline). They are
+deliberately motive-blind — a large arbitrage trade is still real money in an
+FMCC market, so it is surfaced, not auto-demoted by Phase 7. Tune the floors up
+under `anomaly.thresholds` as liquidity grows.
 
 Leads are **grouped by event**: sibling markets of one event (e.g. a Fed-rate
 ladder whose rungs all re-price on the same news) collapse into a single lead,

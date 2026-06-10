@@ -28,7 +28,10 @@ from predictionmonitor.anomaly import anomaly_config, jump_stats, score_activity
 log = logging.getLogger(__name__)
 
 # Signal value keys we measure/sweep (price_jump_z is a gate, reported too).
-SIGNAL_KEYS = ["price_jump_abs", "abs_move", "volume_spike", "wallet_concentration"]
+SIGNAL_KEYS = [
+    "price_jump_abs", "abs_move", "volume_spike", "wallet_concentration",
+    "material_trade_usd", "material_wallet_usd",
+]
 
 # Candidate threshold values for the sweeps.
 _SWEEP_CANDIDATES = {
@@ -36,6 +39,8 @@ _SWEEP_CANDIDATES = {
     "abs_move": [0.1, 0.2, 0.25, 0.3, 0.4, 0.5],
     "volume_spike": [2, 3, 5, 8, 10],
     "wallet_concentration": [0.3, 0.4, 0.5, 0.6, 0.8],
+    "material_trade_usd": [500, 1000, 2000, 5000, 10000],
+    "material_wallet_usd": [1000, 2000, 5000, 10000, 25000],
 }
 
 
@@ -60,9 +65,16 @@ def measure_activity(activity: dict[str, Any]) -> dict[str, Optional[float]]:
         if med > 0:
             m["volume_spike"] = round(max(vols) / med, 2)
 
-    share = (activity.get("stats") or {}).get("top_wallet_share")
+    stats = activity.get("stats") or {}
+    share = stats.get("top_wallet_share")
     if share is not None:
         m["wallet_concentration"] = round(share, 4)
+
+    # Absolute-money tripwires read straight from stored stats (no re-derivation).
+    if stats.get("max_trade_usd") is not None:
+        m["material_trade_usd"] = round(stats["max_trade_usd"], 2)
+    if stats.get("top_wallet_usd") is not None:
+        m["material_wallet_usd"] = round(stats["top_wallet_usd"], 2)
     return m
 
 
@@ -211,6 +223,8 @@ def render_markdown(result: dict[str, Any]) -> str:
         _dist_row("abs_move", dists["abs_move"]),
         _dist_row("volume_spike", dists["volume_spike"]),
         _dist_row("wallet_concentration", dists["wallet_concentration"]),
+        _dist_row("material_trade_usd ($)", dists["material_trade_usd"]),
+        _dist_row("material_wallet_usd ($)", dists["material_wallet_usd"]),
         "",
         "## Current settings",
         "",

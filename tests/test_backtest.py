@@ -10,7 +10,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from predictionmonitor import backtest  # noqa: E402
 
 
-def market(prices, *, volumes=None, top_wallet_share=None, mid="m"):
+def market(prices, *, volumes=None, top_wallet_share=None, mid="m",
+           max_trade_usd=None, top_wallet_usd=None):
     points = []
     for i, p in enumerate(prices):
         pt = {"t": f"t{i}", "price": p}
@@ -20,6 +21,10 @@ def market(prices, *, volumes=None, top_wallet_share=None, mid="m"):
     stats = {}
     if top_wallet_share is not None:
         stats["top_wallet_share"] = top_wallet_share
+    if max_trade_usd is not None:
+        stats["max_trade_usd"] = max_trade_usd
+    if top_wallet_usd is not None:
+        stats["top_wallet_usd"] = top_wallet_usd
     return {"platform": "polymarket", "market_id": mid,
             "title": mid, "url": "u", "decision": "watch", "score": 3.0,
             "price_points": points, "stats": stats}
@@ -46,6 +51,18 @@ class MeasureTests(unittest.TestCase):
         m = backtest.measure_activity(market([0.5, 0.5, 0.5, 0.5]))
         self.assertIsNone(m["price_jump_abs"])
         self.assertEqual(m["abs_move"], 0.0)
+
+    def test_material_money_measured_and_swept(self):
+        m = backtest.measure_activity(
+            market([0.5, 0.5, 0.5], max_trade_usd=4200, top_wallet_usd=9000)
+        )
+        self.assertEqual(m["material_trade_usd"], 4200)
+        self.assertEqual(m["material_wallet_usd"], 9000)
+        res = backtest.run_backtest([
+            market([0.5, 0.5, 0.5], max_trade_usd=4200, top_wallet_usd=9000)
+        ], {}, n_inputs=1)
+        self.assertIn("material_trade_usd", res["sweeps"])
+        self.assertIn("material_wallet_usd", res["distributions"])
 
 
 class DistributionTests(unittest.TestCase):
