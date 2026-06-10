@@ -14,7 +14,11 @@ from datetime import date
 from typing import Any, Optional
 
 from predictionmonitor import history as history_mod
-from predictionmonitor.anomaly import DEFAULT_SIGNAL_THRESHOLDS, _SIGNAL_LABELS
+from predictionmonitor.anomaly import (
+    DEFAULT_SIGNAL_THRESHOLDS,
+    _SIGNAL_LABELS,
+    signal_value_text,
+)
 from predictionmonitor.schema import format_usd
 from predictionmonitor.viz import (
     TIER_COLORS,
@@ -37,6 +41,11 @@ _SIGNAL_WHY = {
     "— money showing up in a burst, often around a catalyst.",
     "wallet_concentration": "A single wallet drove an outsized share of the volume "
     "— one concentrated, confident bet rather than a crowd.",
+    "material_trade": "A single trade moved real money — far above the few-hundred-"
+    "dollar norm on these thin markets. The clearest tripwire that material "
+    "capital just entered, whoever placed it.",
+    "material_wallet": "One wallet's total stake crossed a material dollar threshold "
+    "across the window — a sizeable position building up, not idle churn.",
 }
 
 
@@ -51,6 +60,10 @@ def _threshold_text(thresholds: dict[str, Any]) -> dict[str, str]:
         "volume_spike": f"Fires when peak volume is ≥{t['volume_spike']:.0f}× the median period.",
         "wallet_concentration": f"Fires when one wallet holds ≥{t['wallet_concentration'] * 100:.0f}% "
         "of the traded volume.",
+        "material_trade": f"Fires when the largest single trade is "
+        f"≥{format_usd(t['material_trade_usd'])} in notional value.",
+        "material_wallet": f"Fires when one wallet's total flow is "
+        f"≥{format_usd(t['material_wallet_usd'])} across the window.",
     }
 
 _CSS = """
@@ -423,7 +436,7 @@ def render_report(
                 pts = points_by_id.get((e["platform"], m["market_id"]), [])
                 trs = trades_by_id.get((e["platform"], m["market_id"]), [])
                 sig_txt = "; ".join(
-                    f'{s["label"]} {s["value"]}'
+                    f'{s["label"]} {signal_value_text(s["name"], s["value"])}'
                     + (f' ({s["detail"]["sigma"]}σ)'
                        if (s.get("detail") or {}).get("sigma") is not None else "")
                     for s in m.get("signals", [])

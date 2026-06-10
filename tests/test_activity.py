@@ -208,6 +208,22 @@ class AggregationTests(unittest.TestCase):
         self.assertAlmostEqual(stats["max_step"], 0.25)       # 0.30 -> 0.55
         self.assertAlmostEqual(stats["series_volume"], 150.0)
         self.assertAlmostEqual(stats["top_wallet_share"], 1.0)
+        # Absolute-money tripwire inputs: notional = size × price = 10 × 0.5 = $5.
+        self.assertAlmostEqual(stats["max_trade_usd"], 5.0)
+        self.assertAlmostEqual(stats["top_wallet_usd"], 5.0)
+
+    def test_compute_stats_material_money(self):
+        # Two trades from one wallet ($1,200 + $800) and one from another ($300).
+        # max_trade_usd is the single largest; top_wallet_usd sums per wallet.
+        w_big = cluster_key("0xbig")
+        trades = [
+            Trade(t="t", price=0.60, size=2000, wallet=w_big),          # $1,200
+            Trade(t="t", price=0.40, size=2000, wallet=w_big),          # $800
+            Trade(t="t", price=0.30, size=1000, wallet=cluster_key("0xsmall")),  # $300
+        ]
+        stats = _compute_stats([], trades, _wallet_clusters(trades))
+        self.assertAlmostEqual(stats["max_trade_usd"], 1200.0)
+        self.assertAlmostEqual(stats["top_wallet_usd"], 2000.0)  # 1200 + 800
 
     def test_suspicious_trades_floor_and_ranking(self):
         from predictionmonitor.activity import _suspicious_trades

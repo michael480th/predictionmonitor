@@ -60,12 +60,19 @@ anomaly:
     abs_move: 1.0             # cumulative net move over the window
     volume_spike: 1.0         # peak vs median period volume
     wallet_concentration: 1.5  # one wallet dominating trade volume
+    material_trade: 2.0       # a single large-dollar trade (absolute tripwire)
+    material_wallet: 2.0      # one wallet's large-dollar flow (absolute tripwire)
   thresholds:
     price_jump_abs: 0.1        # min single-step move (probability points)
     price_jump_z: 6.0          # ...and that move must be this many σ of normal
     abs_move: 0.25            # |Δ probability| over the window
     volume_spike: 5.0         # peak / median period volume
     wallet_concentration: 0.5  # top wallet's share of volume
+    # Absolute-money tripwires. These thin FMCC markets baseline at a few hundred
+    # dollars per trade, so a fixed dollar floor — not a σ test — is the highest-
+    # signal way to catch material capital entering. Tune up as liquidity grows.
+    material_trade_usd: 2000     # USD notional of the largest single trade
+    material_wallet_usd: 5000    # USD notional of one wallet's total flow
   tiers:
     high: 3.0
     medium: 1.5

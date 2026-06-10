@@ -137,6 +137,19 @@ def _compute_stats(
     if trades:
         stats["trade_volume"] = round(sum((t.size or 0.0) for t in trades), 4)
         stats["suspicious_trades"] = _suspicious_trades(trades, min_usd=min_trade_usd)
+        # Absolute-money tripwire inputs (Phase 4 material_trade/material_wallet):
+        # the largest single trade's USD notional, and the largest per-wallet USD
+        # flow. On these thin markets a baseline is a few hundred dollars, so a
+        # fixed dollar floor catches material capital the σ-based signals miss.
+        valued = [t.usd for t in trades if t.usd is not None]
+        if valued:
+            stats["max_trade_usd"] = round(max(valued), 2)
+        by_wallet: dict[str, float] = {}
+        for t in trades:
+            if t.wallet and t.usd is not None:
+                by_wallet[t.wallet] = by_wallet.get(t.wallet, 0.0) + t.usd
+        if by_wallet:
+            stats["top_wallet_usd"] = round(max(by_wallet.values()), 2)
 
     if clusters:
         total = sum(c.volume for c in clusters)

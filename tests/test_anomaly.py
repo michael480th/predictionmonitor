@@ -25,6 +25,7 @@ def activity(
     *, prices=None, volumes=None, top_wallet_share=None, platform="polymarket",
     market_id="m1", title="A market", decision="watch", score=3.0,
     event_id=None, event_title=None, suspicious_trades=None,
+    max_trade_usd=None, top_wallet_usd=None,
 ):
     points = []
     prices = prices or []
@@ -38,6 +39,10 @@ def activity(
         stats["top_wallet_share"] = top_wallet_share
     if suspicious_trades is not None:
         stats["suspicious_trades"] = suspicious_trades
+    if max_trade_usd is not None:
+        stats["max_trade_usd"] = max_trade_usd
+    if top_wallet_usd is not None:
+        stats["top_wallet_usd"] = top_wallet_usd
     return {
         "platform": platform, "market_id": market_id, "title": title,
         "url": "https://example.test/x", "decision": decision, "score": score,
@@ -114,6 +119,33 @@ class SignalTests(unittest.TestCase):
         r = score(a)
         names = {s.name for s in r.signals}
         self.assertIn("wallet_concentration", names)
+
+    def test_material_trade_fires_on_calm_market(self):
+        # A flat market (no statistical anomaly) but a single large-dollar trade
+        # — the absolute tripwire must fire on its own.
+        a = activity(prices=[0.5, 0.5, 0.5], max_trade_usd=4000)
+        r = score(a)
+        sig = next(s for s in r.signals if s.name == "material_trade")
+        self.assertEqual(sig.value, 4000)
+        self.assertEqual(sig.threshold, T["material_trade_usd"])
+
+    def test_material_trade_below_floor_is_silent(self):
+        # The thin-market baseline ($358) must NOT trip the tripwire.
+        a = activity(prices=[0.5, 0.5, 0.5], max_trade_usd=358)
+        r = score(a)
+        self.assertNotIn("material_trade", {s.name for s in r.signals})
+
+    def test_material_wallet_fires(self):
+        a = activity(prices=[0.5, 0.5, 0.5], top_wallet_usd=8000)
+        r = score(a)
+        self.assertIn("material_wallet", {s.name for s in r.signals})
+
+    def test_material_trade_alone_reaches_high_tier(self):
+        # A clearly material trade (1.5× the floor) should land in the high tier
+        # by itself — real money is the event a reviewer most wants surfaced.
+        a = activity(prices=[0.5, 0.5, 0.5], max_trade_usd=3000)
+        r = score(a)
+        self.assertEqual(r.tier, "high")
 
     def test_short_series_skipped_gracefully(self):
         a = activity(prices=[0.5])  # too few points

@@ -18,6 +18,16 @@ contribute fewer signals rather than erroring):
 - ``abs_move``             cumulative |price change| over the window
 - ``volume_spike``         peak period volume / median period volume
 - ``wallet_concentration`` share of trade volume in the single largest wallet
+- ``material_trade``       USD notional of the single largest trade in the window
+- ``material_wallet``      USD notional of one wallet's total flow in the window
+
+The last two are **absolute-money tripwires**: unlike the statistical signals
+above (which scale to each market's own noise), they fire on a fixed dollar
+floor. On these thin FMCC markets the largest trade ever observed is a few
+hundred dollars, so any genuinely material position — the thing a reviewer most
+wants to see — stands out in absolute terms regardless of how "unusual" the
+σ-based math judges it. They are deliberately motive-blind: a large arbitrage
+trade is still real money entering an FMCC market and is surfaced, not demoted.
 """
 
 from __future__ import annotations
@@ -36,15 +46,21 @@ from predictionmonitor.arb import (
     apply_arb_adjustments,
     arb_config,
 )
+from predictionmonitor.schema import format_usd
 
 log = logging.getLogger(__name__)
 
-# Signal weights — how much each anomaly contributes to the lead score.
+# Signal weights — how much each anomaly contributes to the lead score. The
+# absolute-money tripwires are weighted so a single clearly-material trade lands
+# in (or near) the high tier on its own — real money in an FMCC market is the
+# event a reviewer most wants surfaced.
 DEFAULT_WEIGHTS: dict[str, float] = {
     "price_jump": 1.5,
     "abs_move": 1.0,
     "volume_spike": 1.0,
     "wallet_concentration": 1.5,
+    "material_trade": 2.0,
+    "material_wallet": 2.0,
 }
 
 # A signal fires once its measured value reaches its threshold.
@@ -54,6 +70,8 @@ DEFAULT_SIGNAL_THRESHOLDS: dict[str, float] = {
     "abs_move": 0.25,             # cumulative |Δ probability| over the window
     "volume_spike": 5.0,          # peak / median period volume
     "wallet_concentration": 0.5,  # top wallet's share of trade volume
+    "material_trade_usd": 2000.0,   # USD notional of the largest single trade
+    "material_wallet_usd": 5000.0,  # USD notional of one wallet's total flow
 }
 
 # Lead tiers by total score.
@@ -67,7 +85,19 @@ _SIGNAL_LABELS = {
     "abs_move": "Large net move",
     "volume_spike": "Volume spike (×median)",
     "wallet_concentration": "Single-wallet concentration",
+    "material_trade": "Material single trade",
+    "material_wallet": "Material wallet flow",
 }
+
+# Signals whose value/threshold are USD notionals, so they render as currency.
+_USD_SIGNALS = {"material_trade", "material_wallet"}
+
+
+def signal_value_text(name: str, value: Any) -> str:
+    """Display string for a signal value — currency for the money tripwires."""
+    if name in _USD_SIGNALS:
+        return format_usd(value) or str(value)
+    return str(value)
 
 
 @dataclass
@@ -159,7 +189,11 @@ class LeadResult:
 
 
 # Signal name -> the threshold key that gates it (defaults to the name itself).
-_THRESHOLD_KEYS = {"price_jump": "price_jump_abs"}
+_THRESHOLD_KEYS = {
+    "price_jump": "price_jump_abs",
+    "material_trade": "material_trade_usd",
+    "material_wallet": "material_wallet_usd",
+}
 
 
 def _mk_signal(name: str, value: float, thresholds: dict, weights: dict) -> Signal:
@@ -243,6 +277,22 @@ def _wallet_signal(stats: dict, thresholds: dict, weights: dict) -> list[Signal]
     return [_mk_signal("wallet_concentration", round(share, 4), thresholds, weights)]
 
 
+def _material_money_signals(stats: dict, thresholds: dict, weights: dict) -> list[Signal]:
+    """Absolute-money tripwires: fire on a fixed USD floor, not relative noise.
+
+    Independent of the statistical signals and of the arb demotion — the point
+    is to surface material capital entering an FMCC market, whatever its motive.
+    """
+    signals: list[Signal] = []
+    max_trade = stats.get("max_trade_usd")
+    if max_trade is not None and max_trade >= thresholds["material_trade_usd"]:
+        signals.append(_mk_signal("material_trade", round(max_trade, 2), thresholds, weights))
+    top_wallet = stats.get("top_wallet_usd")
+    if top_wallet is not None and top_wallet >= thresholds["material_wallet_usd"]:
+        signals.append(_mk_signal("material_wallet", round(top_wallet, 2), thresholds, weights))
+    return signals
+
+
 # --------------------------------------------------------------------------
 # Scoring
 # --------------------------------------------------------------------------
@@ -271,6 +321,7 @@ def score_activity(
     signals += _price_signals(points, thresholds, weights)
     signals += _volume_signal(points, thresholds, weights)
     signals += _wallet_signal(stats, thresholds, weights)
+    signals += _material_money_signals(stats, thresholds, weights)
     signals.sort(key=lambda s: s.contribution, reverse=True)
 
     lead_score = round(sum(s.contribution for s in signals), 4)
@@ -444,7 +495,9 @@ def _signals_text(signals: list[dict[str, Any]]) -> str:
     for s in signals:
         sigma = (s.get("detail") or {}).get("sigma")
         extra = f", {sigma}σ" if sigma is not None else ""
-        parts.append(f"{s['label']} {s['value']} (≥{s['threshold']}{extra})")
+        val = signal_value_text(s["name"], s["value"])
+        thr = signal_value_text(s["name"], s["threshold"])
+        parts.append(f"{s['label']} {val} (≥{thr}{extra})")
     return "; ".join(parts) or "—"
 
 
