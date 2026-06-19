@@ -59,7 +59,17 @@ def _cmd_catalog(args: argparse.Namespace) -> int:
         platforms = _enabled_platforms(settings)
 
     print(f"Cataloging platforms: {', '.join(platforms)}", file=sys.stderr)
-    result = run_catalog(platforms, settings, max_markets=args.max)
+    # Pull taxonomy search terms so the catalog also discovers low-volume,
+    # on-topic markets (not just the volume-ranked bulk pull). Best-effort.
+    try:
+        from predictionmonitor.relevance import load_taxonomy, search_terms
+
+        terms = search_terms(load_taxonomy())
+    except Exception:
+        terms = None
+    result = run_catalog(
+        platforms, settings, max_markets=args.max, search_terms=terms
+    )
 
     output_dir = settings.get("output", {}).get("dir", "reports")
     path = write_catalog(result, output_dir=output_dir)

@@ -39,9 +39,11 @@ class _FakeSession:
     def __init__(self, responses):
         self._responses = list(responses)
         self.calls = []
+        self.urls = []
 
     def get(self, url, params=None, timeout=None, headers=None):
         self.calls.append(params or {})
+        self.urls.append(url)
         return self._responses.pop(0)
 
 
@@ -137,6 +139,60 @@ class PolymarketPaginationTests(unittest.TestCase):
         session = _FakeSession([_FakeResponse("boom", 500)])
         with self.assertRaises(HTTPError):
             list(self._adapter(session).iter_markets())
+
+
+class PolymarketDiscoveryTests(unittest.TestCase):
+    def _adapter(self, session):
+        return PolymarketAdapter(
+            base_url="https://example.test", session=session,
+            page_size=100, max_pages=200,
+        )
+
+    def _event(self, markets):
+        return {"id": "e1", "slug": "freddie", "title": "Freddie Mac",
+                "markets": markets}
+
+    def test_maps_nested_search_markets_with_event_context(self):
+        ev = self._event([{
+            "id": "100", "question": "Will Freddie Mac IPO?",
+            "outcomes": '["Yes","No"]', "outcomePrices": '["0.1","0.9"]',
+            "conditionId": "0xabc", "clobTokenIds": '["t1","t2"]',
+            "closed": False, "active": True, "volumeNum": 1234.5, "slug": "q",
+        }])
+        session = _FakeSession([_FakeResponse({"events": [ev]})])
+        out = list(self._adapter(session).discover_markets(["freddie mac"]))
+        self.assertEqual(len(out), 1)
+        m = out[0]
+        self.assertEqual(m.market_id, "100")
+        # Event context is attached so URL/title/grouping work.
+        self.assertEqual(m.event_title, "Freddie Mac")
+        self.assertEqual(m.url, "https://polymarket.com/event/freddie")
+        # Identifiers Phase 3 needs survive the search shape.
+        self.assertEqual(m.platform_meta.get("condition_id"), "0xabc")
+        self.assertEqual(m.platform_meta.get("clob_token_ids"), ["t1", "t2"])
+        # The search hits public-search, not /markets.
+        self.assertIn("public-search", session.urls[-1])
+
+    def test_skips_closed_and_dedupes_across_terms(self):
+        ev = self._event([
+            {"id": "1", "question": "closed q", "closed": True, "active": True},
+            {"id": "2", "question": "open q", "closed": False, "active": True},
+            {"id": "2", "question": "dup q", "closed": False, "active": True},
+        ])
+        # Two terms -> two identical responses; the open market is yielded once.
+        session = _FakeSession([_FakeResponse({"events": [ev]})] * 2)
+        out = list(self._adapter(session).discover_markets(["a", "b"]))
+        self.assertEqual([m.market_id for m in out], ["2"])
+
+    def test_one_bad_term_does_not_sink_discovery(self):
+        ev = self._event([{"id": "9", "question": "open q",
+                           "closed": False, "active": True}])
+        session = _FakeSession([
+            _FakeResponse("boom", 500),          # first term errors
+            _FakeResponse({"events": [ev]}),      # second term succeeds
+        ])
+        out = list(self._adapter(session).discover_markets(["bad", "good"]))
+        self.assertEqual([m.market_id for m in out], ["9"])
 
 
 class KalshiMappingTests(unittest.TestCase):

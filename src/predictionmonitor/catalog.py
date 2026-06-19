@@ -54,15 +54,48 @@ def collect_markets(
     platform: str,
     settings: dict[str, Any],
     max_markets: Optional[int] = None,
+    search_terms: Optional[Iterable[str]] = None,
 ) -> list[Market]:
-    """Fetch and normalize all markets from one platform, with optional cap."""
+    """Fetch and normalize all markets from one platform, with optional cap.
+
+    The volume-ranked bulk pull (``iter_markets``) is augmented with targeted,
+    volume-independent discovery (``discover_markets``) for `search_terms`, so
+    on-topic markets below a platform's volume/offset ceiling are still caught.
+    Results are de-duplicated by market id.
+    """
     adapter = _build_adapter(platform, settings)
     out: list[Market] = []
-    for market in adapter.iter_markets():
+    seen: set[str] = set()
+
+    def _add(market: Market) -> bool:
+        if market.market_id in seen:
+            return False
+        seen.add(market.market_id)
         out.append(market)
+        return True
+
+    capped = False
+    for market in adapter.iter_markets():
+        _add(market)
         if max_markets is not None and len(out) >= max_markets:
             log.info("%s: reached max_markets cap (%d)", platform, max_markets)
+            capped = True
             break
+
+    # Targeted discovery fills the gap the volume-capped bulk pull leaves behind.
+    # A discovery failure must not discard the bulk catalog we already have.
+    if search_terms and not capped:
+        try:
+            added = sum(1 for m in adapter.discover_markets(search_terms) if _add(m))
+            if added:
+                log.info(
+                    "%s: discovery added %d markets beyond the bulk catalog",
+                    platform,
+                    added,
+                )
+        except Exception:
+            log.exception("%s: market discovery failed (kept bulk catalog)", platform)
+
     log.info("%s: collected %d markets", platform, len(out))
     return out
 
@@ -71,19 +104,24 @@ def run_catalog(
     platforms: Iterable[str],
     settings: dict[str, Any],
     max_markets: Optional[int] = None,
+    search_terms: Optional[Iterable[str]] = None,
 ) -> dict[str, Any]:
     """Run catalog ingestion across platforms and assemble a result dict.
 
     Each platform is isolated: a failure in one is recorded as an error and does
     not abort the others (so a partial catalog still lands).
     """
+    # Materialize so the same terms can be reused across platforms.
+    terms = list(search_terms) if search_terms else None
     markets: list[Market] = []
     errors: dict[str, str] = {}
     per_platform: dict[str, int] = {}
 
     for platform in platforms:
         try:
-            collected = collect_markets(platform, settings, max_markets=max_markets)
+            collected = collect_markets(
+                platform, settings, max_markets=max_markets, search_terms=terms
+            )
             markets.extend(collected)
             per_platform[platform] = len(collected)
         except Exception as exc:  # network/parse/etc. — keep going

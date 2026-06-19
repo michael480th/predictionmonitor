@@ -238,3 +238,30 @@ def relevance_thresholds(settings: dict[str, Any]) -> tuple[float, float]:
 def description_weight(settings: dict[str, Any]) -> float:
     rel = (settings or {}).get("relevance", {})
     return float(rel.get("description_weight", DEFAULT_DESCRIPTION_WEIGHT))
+
+
+def search_terms(taxonomy: dict[str, Any]) -> list[str]:
+    """Distinctive terms to query a platform's search endpoint directly.
+
+    These let the catalog reach low-volume, FMCC-specific markets that fall below
+    a volume-capped bulk pull (see ``Adapter.discover_markets``). Prefers an
+    explicit ``search_terms:`` list in the taxonomy (curated to stay high-signal);
+    otherwise falls back to the union of every bucket's keywords.
+    """
+    explicit = taxonomy.get("search_terms")
+    if explicit:
+        raw = [str(t) for t in explicit]
+    else:
+        raw = [
+            str(kw)
+            for bucket in taxonomy.get("buckets", {}).values()
+            for kw in bucket.get("keywords", [])
+        ]
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in raw:
+        t = t.strip().lower()
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out

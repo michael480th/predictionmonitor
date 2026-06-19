@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Iterator, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 import requests
 
@@ -45,6 +45,17 @@ class Adapter(ABC):
     def iter_markets(self) -> Iterator[Market]:
         """Yield normalized markets, paginating until exhausted or capped."""
         raise NotImplementedError
+
+    def discover_markets(self, terms: Iterable[str]) -> Iterator[Market]:
+        """Yield markets matching `terms` via the platform's search endpoint.
+
+        :meth:`iter_markets` is a volume-ranked bulk pull; on platforms that cap
+        deep pagination it can never reach low-volume niche markets. This is the
+        targeted complement — it finds relevant markets by search, independent of
+        volume rank, so the catalog isn't blind to thin-but-on-topic markets.
+        Default is a no-op so a platform opts in only if it has such an endpoint.
+        """
+        return iter(())
 
     # Subclasses implement the platform-specific mapping.
     @abstractmethod
