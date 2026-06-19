@@ -113,6 +113,26 @@ class PolymarketPaginationTests(unittest.TestCase):
         self.assertEqual(len(markets), 100 * 100)
         self.assertEqual(session.calls[-1].get("offset"), 10000)
 
+    def test_stops_gracefully_on_lowered_offset_ceiling_422(self):
+        # Regression: Gamma tightened its offset ceiling to ~2k. A 422 below the
+        # old 10k mark must still be treated as end-of-pagination so the
+        # high-volume markets already collected are kept, not discarded.
+        rows = load_fixture("polymarket_markets.json")
+        full_page = [rows[0]] * 100
+        session = _FakeSession(
+            [_FakeResponse(full_page)] * 21 + [_FakeResponse("offset too large", 422)]
+        )
+        markets = list(self._adapter(session).iter_markets())
+        self.assertEqual(len(markets), 21 * 100)
+        self.assertEqual(session.calls[-1].get("offset"), 2100)
+
+    def test_first_page_422_propagates(self):
+        # A 422 on the very first request is a bad request, not the pagination
+        # ceiling — surface it rather than silently returning an empty catalog.
+        session = _FakeSession([_FakeResponse("bad request", 422)])
+        with self.assertRaises(HTTPError):
+            list(self._adapter(session).iter_markets())
+
     def test_non_ceiling_http_error_propagates(self):
         session = _FakeSession([_FakeResponse("boom", 500)])
         with self.assertRaises(HTTPError):
