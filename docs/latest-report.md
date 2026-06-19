@@ -6,14 +6,35 @@
 
 | Stage | Result |
 |-------|--------|
-| Catalog | 102100 open markets (polymarket 2100, kalshi 100000) |
-| FMCC relevance | 1 watch · 2 review · 83 excluded |
-| Activity | 1 markets, 30-day window |
-| Anomaly leads | **0 high** · 0 medium events |
+| Catalog | 102126 open markets (polymarket 2126, kalshi 100000) |
+| FMCC relevance | 12 watch · 8 review · 84 excluded |
+| Activity | 20 markets, 30-day window |
+| Anomaly leads | **2 high** · 2 medium events |
 
 ## Top leads
 
-_No anomalous activity flagged today._
+- **6.89 [high]** [Will the 30-year Mortgage Rate hit __ in 2026?](https://polymarket.com/event/will-the-30-year-mortgage-rate-hit-in-2026) · 5/5 markets  
+  Will the U.S. 30-year Fixed-Rate Mortgage hit 6.75% (HIGH) by December 31, 2026? — Abrupt price jump 0.41 (≥0.1, 7.3σ); Single-wallet concentration 0.7981 (≥0.5)
+- **3.77 [high]** [IPOs before 2027?](https://polymarket.com/event/ipos-before-2027) · 1/2 markets  
+  Fannie Mae IPO before 2027? — Single-wallet concentration 0.7069 (≥0.5); Abrupt price jump 0.11 (≥0.1, 55.8σ)
+  - **Largest trades** — trader → their activity, outcome → the bet:
+    - [Cooked-Replica](https://polymarket.com/profile/0x9f92355417d3001149a03e1cdcfecef40d482c2d?tab=activity) bought **$129** of [Yes](https://polymarket.com/event/ipos-before-2027)  `2026-06-18 03:10` · [receipt](https://polygonscan.com/tx/0x453e31c97c9d2474fcf0cd5f6afce3fe8f655b7df7bfada229923674ab731daa)
+- **2.19 [medium]** [Freddie Mac IPO Closing Market Cap](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap) · 1/6 markets  
+  Will Freddie Mac not IPO by June 30, 2026? — Material single trade 2190.62 (≥2000.0)
+  - **Largest trades** — trader → their activity, outcome → the bet:
+    - [Compassionate-Kneejerk](https://polymarket.com/profile/0x95074f700f93bdf6e62fc965e0832064c0877b04?tab=activity) bought **$2,191** of [Yes](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap)  `2026-06-14 16:18` · [receipt](https://polygonscan.com/tx/0x6b2df89d6d422a446820781d8e3e26775939d0200273c83d887826e2cca6858a)
+    - [Cheery-Preparation](https://polymarket.com/profile/0xcaab19659b995951a44cc992447cb2ad5be324dd?tab=activity) bought **$1,309** of [Yes](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap)  `2026-06-17 20:55` · [receipt](https://polygonscan.com/tx/0x55d1c9f92f1de4aafa782bcee18164a101aa91817e4862f5acfaf735d1e6736c)
+    - [Hospitable-Tool](https://polymarket.com/profile/0x4acf2ad93f608ead3144e3e0aa326d259edc106c?tab=activity) bought **$909** of [Yes](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap)  `2026-05-25 11:42` · [receipt](https://polygonscan.com/tx/0x71e50aa32efadfeb19c0f3ee5ea4f2b4ed7ae6cd4c249e5b6a3566147c6dedfc)
+    - [Cheery-Preparation](https://polymarket.com/profile/0xcaab19659b995951a44cc992447cb2ad5be324dd?tab=activity) bought **$575** of [Yes](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap)  `2026-06-04 16:07` · [receipt](https://polygonscan.com/tx/0x66156e1b755fe4dae4e6c9e7ec1603036ff1b060a1ce8d0d71f861149a545398)
+    - [Cheery-Preparation](https://polymarket.com/profile/0xcaab19659b995951a44cc992447cb2ad5be324dd?tab=activity) bought **$495** of [Yes](https://polymarket.com/event/freddie-mac-ipo-closing-market-cap)  `2026-06-04 16:06` · [receipt](https://polygonscan.com/tx/0xe00e474ef4d47faff3c59b675ebbddd1bdde6d8383beefcda4dd5075c2b7f220)
+- **1.56 [medium]** [Fannie Mae IPO Closing Market Cap](https://polymarket.com/event/fannie-mae-ipo-closing-market-cap) · 1/7 markets  
+  Will Fannie Mae’s market cap be between $200B and $250B at market close on IPO day? — Single-wallet concentration 0.519 (≥0.5)
+  - **Largest trades** — trader → their activity, outcome → the bet:
+    - [Admirable-Trust](https://polymarket.com/profile/0xfbd8c9c22ca76b3662d0e53a4f79719fdc684027?tab=activity) bought **$250** of [No](https://polymarket.com/event/fannie-mae-ipo-closing-market-cap)  `2026-06-06 08:09` · [receipt](https://polygonscan.com/tx/0xb7ffe530d9b4f10fbde210db33885b2b2fc29e361fd9e489ac42a236a832964b)
+    - [Admirable-Trust](https://polymarket.com/profile/0xfbd8c9c22ca76b3662d0e53a4f79719fdc684027?tab=activity) bought **$250** of [No](https://polymarket.com/event/fannie-mae-ipo-closing-market-cap)  `2026-06-06 08:09` · [receipt](https://polygonscan.com/tx/0x2d4b9328a2d63b2bd0ef5a410fc378c40ec69bb7c86d67f6630e538ab6e3b3c3)
+    - [Admirable-Trust](https://polymarket.com/profile/0xfbd8c9c22ca76b3662d0e53a4f79719fdc684027?tab=activity) bought **$250** of [No](https://polymarket.com/event/fannie-mae-ipo-closing-market-cap)  `2026-06-06 08:09` · [receipt](https://polygonscan.com/tx/0x8bd028ebed2cb593c7aee21947f5add412a90e07feefce5dbec326781818ddba)
+    - [Admirable-Trust](https://polymarket.com/profile/0xfbd8c9c22ca76b3662d0e53a4f79719fdc684027?tab=activity) bought **$250** of [No](https://polymarket.com/event/fannie-mae-ipo-closing-market-cap)  `2026-06-06 07:52` · [receipt](https://polygonscan.com/tx/0x5d74ebd4d90ce64e9ec3e124b522d1c450bf38d39a36f019a0a849b82844cd1a)
+    - [Grown-Fence](https://polymarket.com/profile/0x4f1d5ae26fc31472966e951af3183308736d8de2?tab=activity) bought **$225** of [No](https://polymarket.com/event/fannie-mae-ipo-closing-market-cap)  `2026-05-24 20:26` · [receipt](https://polygonscan.com/tx/0x13da9a1e4b8244cc4f8315cff5d572b47722e283f4cbbdd0a50366f7319c3218)
 
 ## Full reports
 
