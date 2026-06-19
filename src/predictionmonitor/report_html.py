@@ -81,6 +81,7 @@ h1 { margin: 0 0 4px; font-size: 24px; }
 .card .k { color:var(--muted); font-size:12px; text-transform:uppercase;
            letter-spacing:.04em; }
 .card .v { font-size:22px; font-weight:600; margin-top:2px; }
+.card .sub { color:var(--muted); font-size:11.5px; margin-top:5px; line-height:1.35; }
 .section { background:#fff; border:1px solid #e1e4e8; border-radius:10px;
            padding:16px 18px; margin:16px 0; }
 .event { border-top:1px solid #eee; padding:12px 0; }
@@ -232,9 +233,10 @@ def _tier_badge(tier: str) -> str:
     return f'<span class="badge" style="background:{color}">{escape(tier)}</span>'
 
 
-def _card(label: str, value: Any) -> str:
+def _card(label: str, value: Any, sub: str = "") -> str:
+    sub_html = f'<div class="sub">{escape(sub)}</div>' if sub else ""
     return f'<div class="card"><div class="k">{escape(label)}</div>' \
-           f'<div class="v">{value}</div></div>'
+           f'<div class="v">{value}</div>{sub_html}</div>'
 
 
 def _fmt_num(x: Any) -> str:
@@ -367,15 +369,32 @@ def render_report(
     start_ts = end_ts - n_days * 86400
 
     ec = leads_result.get("event_counts", {})
-    cards = [_card("Anomaly leads", f'{ec.get("high", 0)} high · {ec.get("medium", 0)} med')]
+    cards = [_card(
+        "Anomaly leads",
+        f'{ec.get("high", 0)} high · {ec.get("medium", 0)} medium',
+        "Unusual trading patterns worth a closer look",
+    )]
     if summary:
         cat = summary.get("catalog", {})
         rel = summary.get("relevance", {})
         act = summary.get("activity", {})
+        n_act = act.get("markets", 0)
         cards = [
-            _card("Catalog", cat.get("total", 0)),
-            _card("FMCC relevant", f'{rel.get("watch", 0)} watch · {rel.get("review", 0)} rev'),
-            _card("Activity", f'{act.get("markets", 0)} mkts / {window_days}d'),
+            _card(
+                "Markets scanned",
+                _fmt_num(cat.get("total", 0)),
+                "Open markets pulled across all platforms",
+            ),
+            _card(
+                "Relevant to FMCC",
+                f'{rel.get("watch", 0)} watching · {rel.get("review", 0)} to review',
+                "Markets matching the mortgage-finance watchlist",
+            ),
+            _card(
+                "Monitored for activity",
+                f'{n_act} market{"" if n_act == 1 else "s"}',
+                f"Trade history pulled over the last {window_days} days",
+            ),
         ] + cards
 
     out = [
