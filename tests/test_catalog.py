@@ -114,5 +114,57 @@ class RunCatalogTests(unittest.TestCase):
             self.assertEqual(reloaded["total"], 1)
 
 
+class DiscoveryMergeTests(unittest.TestCase):
+    """collect_markets merges volume-ranked bulk + targeted discovery."""
+
+    class _FakeAdapter:
+        def __init__(self, bulk, discovered):
+            self._bulk, self._disc = bulk, discovered
+            self.discover_calls = 0
+
+        def iter_markets(self):
+            return iter(self._bulk)
+
+        def discover_markets(self, terms):
+            self.discover_calls += 1
+            return iter(self._disc)
+
+    @staticmethod
+    def _mk(mid):
+        from predictionmonitor.schema import Market
+
+        return Market(platform="polymarket", market_id=mid, title=f"m{mid}",
+                      url="", status="open")
+
+    def test_discovery_merges_and_dedupes(self):
+        # "2" appears in both the bulk pull and discovery — kept once, order stable.
+        fake = self._FakeAdapter([self._mk("1"), self._mk("2")],
+                                 [self._mk("2"), self._mk("3")])
+        with mock.patch.object(catalog, "_build_adapter", return_value=fake):
+            out = catalog.collect_markets(
+                "polymarket", RunCatalogTests.SETTINGS, search_terms=["x"]
+            )
+        self.assertEqual([m.market_id for m in out], ["1", "2", "3"])
+
+    def test_no_search_terms_skips_discovery(self):
+        fake = self._FakeAdapter([self._mk("1")], [self._mk("9")])
+        with mock.patch.object(catalog, "_build_adapter", return_value=fake):
+            out = catalog.collect_markets("polymarket", RunCatalogTests.SETTINGS)
+        self.assertEqual([m.market_id for m in out], ["1"])
+        self.assertEqual(fake.discover_calls, 0)
+
+    def test_cap_skips_discovery(self):
+        fake = self._FakeAdapter(
+            [self._mk("1"), self._mk("2"), self._mk("3")], [self._mk("9")]
+        )
+        with mock.patch.object(catalog, "_build_adapter", return_value=fake):
+            out = catalog.collect_markets(
+                "polymarket", RunCatalogTests.SETTINGS,
+                max_markets=2, search_terms=["x"],
+            )
+        self.assertEqual([m.market_id for m in out], ["1", "2"])
+        self.assertEqual(fake.discover_calls, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

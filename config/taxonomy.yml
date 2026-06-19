@@ -55,6 +55,24 @@ buckets:
       - gse ipo
       - gse relisting
 
+# Terms queried directly against each platform's search endpoint so low-volume
+# FMCC markets are discovered even when they fall below a volume-capped bulk
+# catalog (e.g. Polymarket's Gamma API 422s past a ~2k offset, so paging by
+# volume never reaches thin Freddie/Fannie/mortgage markets). Keep these
+# specific — generic terms pull noise. If omitted, all bucket keywords are used.
+search_terms:
+  - freddie mac
+  - fannie mae
+  - gse
+  - conservatorship
+  - fhfa
+  - federal housing finance agency
+  - mortgage rate
+  - 30-year mortgage
+  - housing market
+  - mbs
+  - gse reform
+
 # Categories on the platforms that are worth pulling even before keyword match
 # (used as a coarse pre-filter hint in Phase 2).
 platform_category_hints:

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Iterator, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from requests.exceptions import HTTPError
 
@@ -45,6 +45,10 @@ _MAX_PAGE = 100
 # This value is only a proactive backstop to avoid a guaranteed-422 request; the
 # 422 handler below is the real safety net regardless of where the ceiling sits.
 _MAX_OFFSET = 10_000
+
+# Events returned per search term by the public-search endpoint. FMCC terms
+# resolve to a handful of events each, so a modest cap keeps discovery cheap.
+_SEARCH_LIMIT_PER_TYPE = 40
 
 # Activity lives on different hosts than the Gamma catalog API.
 _DEFAULT_CLOB_URL = "https://clob.polymarket.com"
@@ -120,6 +124,50 @@ class PolymarketAdapter(Adapter):
                 # Next request would exceed the ceiling; stop before the 422.
                 log.info("polymarket: stopping at offset cap (%d markets)", offset)
                 return
+
+    def discover_markets(self, terms: Iterable[str]) -> Iterator[Market]:
+        """Find markets by keyword via Gamma's public-search, regardless of volume.
+
+        The bulk `/markets` catalog is volume-sorted and Gamma 422s past a low
+        offset ceiling, so niche FMCC markets below that cut never appear there.
+        Public-search returns them by relevance, independent of volume — they're
+        scored downstream exactly like the bulk catalog. Markets already yielded
+        (across terms) and, when `only_open`, closed/inactive ones are skipped.
+        """
+        limit = self.config.get("search_limit_per_type", _SEARCH_LIMIT_PER_TYPE)
+        seen: set[str] = set()
+        for term in terms:
+            term = (term or "").strip()
+            if not term:
+                continue
+            try:
+                data = get_json(
+                    self.session,
+                    f"{self.base_url}/public-search",
+                    params={"q": term, "limit_per_type": limit},
+                    timeout=self.timeout,
+                )
+            except HTTPError as exc:
+                # One bad term shouldn't sink discovery — log and move on.
+                log.warning("polymarket: search for %r failed: %s", term, exc)
+                continue
+            events = (data.get("events") if isinstance(data, dict) else None) or []
+            for ev in events:
+                # Attach the parent event (sans its markets list, to avoid bloat)
+                # so _to_market can build the URL/title and group siblings.
+                ev_ctx = {k: v for k, v in ev.items() if k != "markets"}
+                for raw in ev.get("markets") or []:
+                    mid = str(raw.get("id") or raw.get("conditionId") or "")
+                    if not mid or mid in seen:
+                        continue
+                    if self.only_open and (
+                        raw.get("closed") or raw.get("active") is False
+                    ):
+                        continue
+                    market = self._to_market({**raw, "events": [ev_ctx]})
+                    if market is not None:
+                        seen.add(mid)
+                        yield market
 
     @staticmethod
     def _parse_json_list(value: Any) -> list:

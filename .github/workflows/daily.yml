@@ -26,7 +26,7 @@ on:
         description: "Also scan borderline 'review' markets"
         type: boolean
         required: false
-        default: false
+        default: true
 
 permissions:
   contents: write          # commit history/events.jsonl + docs/ digest
@@ -60,7 +60,9 @@ jobs:
           KALSHI_API_PRIVATE_KEY: ${{ secrets.KALSHI_API_PRIVATE_KEY }}
           WINDOW_DAYS: ${{ github.event.inputs.window_days || '30' }}
           MAX_MARKETS: ${{ github.event.inputs.max_markets || '' }}
-          INCLUDE_REVIEW: ${{ github.event.inputs.include_review || 'false' }}
+          # Default ON: borderline 'review' markets are monitored too, so the
+          # scan isn't blind to thin-but-relevant FMCC markets.
+          INCLUDE_REVIEW: ${{ github.event.inputs.include_review || 'true' }}
         run: |
           # NB: -v is a global flag, so it must precede the `daily` subcommand.
           ARGS="--window-days ${WINDOW_DAYS}"

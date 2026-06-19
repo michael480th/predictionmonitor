@@ -23,6 +23,7 @@ from predictionmonitor.relevance import (
     filter_markets,
     load_taxonomy,
     relevance_thresholds,
+    search_terms,
 )
 from predictionmonitor.schema import Market, format_usd
 from predictionmonitor.watchlist import write_watchlist
@@ -53,14 +54,19 @@ def run_daily(
     """
     plats = platforms or enabled_platforms(settings)
 
-    # 1. Catalog.
+    # Load the taxonomy up front: it drives both targeted catalog discovery
+    # (so low-volume FMCC markets are pulled) and the relevance filter below.
+    taxonomy = load_taxonomy(taxonomy_path)
+
+    # 1. Catalog (volume-ranked bulk pull + keyword-targeted discovery).
     log.info("daily: cataloging %s", ", ".join(plats))
-    catalog_result = run_catalog(plats, settings, max_markets=max_markets)
+    catalog_result = run_catalog(
+        plats, settings, max_markets=max_markets, search_terms=search_terms(taxonomy)
+    )
     catalog_path = write_catalog(catalog_result, output_dir=output_dir)
     markets = [Market.from_dict(m) for m in catalog_result.get("markets", [])]
 
     # 2. Relevance filter -> watchlist.
-    taxonomy = load_taxonomy(taxonomy_path)
     watch_th, review_th = relevance_thresholds(settings)
     watchlist_result = filter_markets(
         markets,
