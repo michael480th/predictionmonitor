@@ -6,12 +6,10 @@
 
 | Stage | Result |
 |-------|--------|
-| Catalog | 100000 open markets (polymarket 0, kalshi 100000) |
-| FMCC relevance | 0 watch · 0 review · 0 excluded |
-| Activity | 0 markets, 45-day window |
+| Catalog | 102100 open markets (polymarket 2100, kalshi 100000) |
+| FMCC relevance | 1 watch · 2 review · 83 excluded |
+| Activity | 1 markets, 30-day window |
 | Anomaly leads | **0 high** · 0 medium events |
-
-> ⚠️ Catalog errors: polymarket: HTTPError: 422 Client Error: Unprocessable Entity for url: https://gamma-api.polymarket.com/markets?limit=100&offset=2100&order=volumeNum&ascending=false&closed=false&active=true
 
 ## Top leads
 
