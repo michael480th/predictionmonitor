@@ -34,10 +34,16 @@ log = logging.getLogger(__name__)
 # the "short page" stop condition fire after the very first page.)
 _MAX_PAGE = 100
 
-# Gamma also rejects `offset` beyond ~10k with a 422 ("offset too large, use
-# /markets/keyset for deeper pagination"). We sort by descending volume and stop
-# at that ceiling, so the markets we keep are the most significant ones — which
-# is exactly what a monitor wants, and well inside the cap.
+# Gamma rejects deep `offset`s with a 422 ("offset too large, use
+# /markets/keyset for deeper pagination"). The exact ceiling is enforced
+# server-side and has moved over time (we've seen it as high as ~10k and as low
+# as ~2k), so we don't hardcode it: a 422 on any page past the first is treated
+# as the documented end of keyset-less pagination (see iter_markets). We sort by
+# descending volume, so whatever we keep before the ceiling are the most
+# significant markets — exactly what a monitor wants.
+#
+# This value is only a proactive backstop to avoid a guaranteed-422 request; the
+# 422 handler below is the real safety net regardless of where the ceiling sits.
 _MAX_OFFSET = 10_000
 
 # Activity lives on different hosts than the Gamma catalog API.
@@ -85,10 +91,15 @@ class PolymarketAdapter(Adapter):
                     timeout=self.timeout,
                 )
             except HTTPError as exc:
-                # 422 past the offset ceiling is the documented end of keyset-less
-                # pagination — stop cleanly with what we have, don't fail the platform.
+                # A 422 on any page past the first is the documented end of
+                # keyset-less pagination (Gamma's offset ceiling) — stop cleanly
+                # with the markets already gathered rather than failing the whole
+                # platform and discarding them. The ceiling has moved server-side
+                # over time, so we key off "we already have data" (offset > 0)
+                # instead of a fixed offset. A 422 on the very first page means
+                # the request itself is bad, so that still propagates.
                 resp = exc.response
-                if resp is not None and resp.status_code == 422 and offset >= _MAX_OFFSET:
+                if resp is not None and resp.status_code == 422 and offset > 0:
                     log.info(
                         "polymarket: reached Gamma offset ceiling (%d); stopping", offset
                     )
